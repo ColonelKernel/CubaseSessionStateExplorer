@@ -1,0 +1,45 @@
+{
+  "generator": "make_fixtures.py",
+  "format": "dawproject (open MIT format imported/exported by Cubase 14/15)",
+  "fixtures": {
+    "demo_session.dawproject": {
+      "expected": {
+        "tracks_min": 5,
+        "has_group": true,
+        "has_fx_channel": true,
+        "has_instrument": true,
+        "has_automation": true,
+        "tempo": 120.0
+      }
+    },
+    "dualfilter_a.dawproject": {
+      "expected": {
+        "field": "automation[DualFilter/Position].points[0].value",
+        "value": 0.25
+      }
+    },
+    "dualfilter_b.dawproject": {
+      "expected": {
+        "field": "automation[DualFilter/Position].points[0].value",
+        "value": 0.75
+      }
+    },
+    "routing_a.dawproject": {
+      "expected": {
+        "sends": 0
+      }
+    },
+    "routing_b.dawproject": {
+      "expected": {
+        "sends": 1,
+        "new_node": "FX 1 - Plate"
+      }
+    }
+  },
+  "renders": [
+    "dualfilter_a.wav",
+    "dualfilter_b.wav",
+    "routing_a.wav",
+    "routing_b.wav"
+  ]
+}

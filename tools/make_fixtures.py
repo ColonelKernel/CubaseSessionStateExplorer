@@ -1,0 +1,336 @@
+"""Generate controlled Cubase-compatible fixtures.
+
+DAWproject is an open MIT format that Cubase 14/15 import and export, so we can
+author *valid* ``.dawproject`` fixtures directly and parse real state from them
+— no Cubase install required for the pipeline to run end-to-end. We also
+synthesize matching WAV renders (stdlib ``wave``, no numpy) so the state->audio
+intervention demo produces a genuine, measurable acoustic delta.
+
+Run:  python tools/make_fixtures.py [output_dir]
+
+Fixtures produced (subset of docs/CUBASE_FIXTURE_PROTOCOL.md):
+  demo_session.dawproject        full multi-track session (graph/UI demo)
+  dualfilter_a/b.dawproject      headline A/B: DualFilter Position -0.5 -> +0.5
+  dualfilter_a/b.wav             matching renders (low-pass vs high-pass tone)
+  routing_a/b.dawproject         dry vocal  vs  vocal + reverb send
+  routing_a/b.wav                matching renders (dry vs reverb tail)
+  notes.mid                      a short MIDI performance
+  manifest.json                  expected-value manifest for validation
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import struct
+import sys
+import wave
+import xml.etree.ElementTree as ET
+import zipfile
+
+
+# --------------------------------------------------------------------------
+# DAWproject XML builder (minimal, faithful to bitwig/dawproject structure)
+# --------------------------------------------------------------------------
+
+def _sub(parent, tag, **attrs):
+    el = ET.SubElement(parent, tag)
+    for k, v in attrs.items():
+        if v is not None:
+            el.set(k, str(v))
+    return el
+
+
+def _real(parent, tag, value, unit="linear", pid=None):
+    el = _sub(parent, tag, value=value, unit=unit, id=pid)
+    return el
+
+
+def build_project(app_version="15.0.10"):
+    root = ET.Element("Project", version="1.0")
+    _sub(root, "Application", name="Cubase", version=app_version)
+    transport = _sub(root, "Transport")
+    _real(transport, "Tempo", 120.0, unit="bpm", pid="tempo")
+    _sub(transport, "TimeSignature", numerator=4, denominator=4, id="tsig")
+    structure = _sub(root, "Structure")
+    arrangement = _sub(root, "Arrangement", id="arr")
+    lanes = _sub(arrangement, "Lanes", timeUnit="beats", id="arrlanes")
+    return root, structure, arrangement, lanes
+
+
+def add_master(structure, name="Stereo Out", ch_id="ch-master"):
+    tr = _sub(structure, "Track", id="tr-master", name=name, contentType="audio",
+              loaded="true")
+    ch = _sub(tr, "Channel", id=ch_id, role="master", audioChannels="2")
+    _real(ch, "Volume", 1.0, unit="linear")
+    _real(ch, "Pan", 0.5, unit="normalized")
+    return ch_id
+
+
+def add_track(structure, name, ch_id, destination, content="audio",
+              volume=0.85, pan=0.5, role=None, color=None, devices=None,
+              sends=None):
+    tr = _sub(structure, "Track", id=f"tr-{ch_id}", name=name,
+              contentType=content, loaded="true", color=color)
+    ch = _sub(tr, "Channel", id=ch_id, destination=destination,
+              audioChannels="2", role=role)
+    _real(ch, "Volume", volume, unit="linear")
+    _real(ch, "Pan", pan, unit="normalized")
+    _sub(ch, "Mute", value="false")
+    if devices:
+        devs = _sub(ch, "Devices")
+        for i, d in enumerate(devices):
+            el = _sub(devs, d.get("element", "Vst3Plugin"),
+                      deviceName=d["name"], deviceID=d.get("id", d["name"]),
+                      deviceRole=d.get("role", "audioFX"),
+                      id=f"dev-{ch_id}-{i}", name=d["name"])
+            _sub(el, "Enabled", value="true" if d.get("enabled", True) else "false")
+            _sub(el, "State", path=f"plugins/{d['name']}-{ch_id}.vstpreset")
+    if sends:
+        sends_el = _sub(ch, "Sends")
+        for s in sends:
+            se = _sub(sends_el, "Send", destination=s["destination"],
+                      type=s.get("type", "post"))
+            _real(se, "Volume", s.get("level", 0.3), unit="linear")
+    return f"tr-{ch_id}", ch_id
+
+
+def add_clip(lanes, track_ref, time, duration, name, notes=None, audio=None):
+    tl = _sub(lanes, "Lanes", track=track_ref, id=f"lane-{track_ref}")
+    clips = _sub(tl, "Clips", id=f"clips-{track_ref}")
+    clip = _sub(clips, "Clip", time=time, duration=duration, name=name)
+    if notes:
+        notes_el = _sub(clip, "Notes")
+        for (t, dur, key, vel) in notes:
+            _sub(notes_el, "Note", time=t, duration=dur, key=key, vel=vel)
+    if audio:
+        warps = _sub(clip, "Warps", contentTimeUnit="beats")
+        au = _sub(warps, "Audio", algorithm="stretch", channels="2",
+                  duration=duration, sampleRate="44100", id=f"au-{track_ref}")
+        _sub(au, "File", path=audio)
+    return tl
+
+
+def add_automation(lanes, track_ref, target, points):
+    tl = _sub(lanes, "Lanes", track=track_ref, id=f"autolane-{track_ref}-{target}")
+    pts = _sub(tl, "Points", target=target, unit="normalized",
+               id=f"pts-{track_ref}-{target}")
+    for (t, v) in points:
+        _sub(pts, "RealPoint", time=t, value=v, interpolation="linear")
+    return tl
+
+
+def write_dawproject(root, path):
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    meta = b'<?xml version="1.0" encoding="UTF-8"?>\n<MetaData/>\n'
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("project.xml", xml_bytes)
+        zf.writestr("metadata.xml", meta)
+
+
+# --------------------------------------------------------------------------
+# Audio render synthesis (stdlib wave; no numpy)
+# --------------------------------------------------------------------------
+
+def _write_wav(path, samples, sr=44100):
+    with wave.open(path, "w") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        frames = bytearray()
+        for s in samples:
+            v = int(max(-1.0, min(1.0, s)) * 30000)
+            frames += struct.pack("<h", v)
+        w.writeframes(bytes(frames))
+
+
+def _one_pole(samples, alpha, highpass=False):
+    out = []
+    prev = 0.0
+    prev_in = 0.0
+    for x in samples:
+        lp = prev + alpha * (x - prev)
+        prev = lp
+        if highpass:
+            out.append(x - lp)
+        else:
+            out.append(lp)
+        prev_in = x
+    return out
+
+
+def render_dualfilter(path, position, sr=44100, dur=2.0):
+    """A harmonically rich tone filtered by 'position': -1 dark .. +1 bright."""
+    n = int(sr * dur)
+    base = []
+    for i in range(n):
+        t = i / sr
+        # sawtooth-ish sum of harmonics
+        s = sum((1.0 / k) * math.sin(2 * math.pi * 110 * k * t) for k in range(1, 12))
+        base.append(0.2 * s)
+    # position in [-1,1]; map to a lowpass/highpass blend.
+    p = max(-1.0, min(1.0, position))
+    lp = _one_pole(base, alpha=0.05 + 0.4 * (p + 1) / 2)  # brighter as p rises
+    hp = _one_pole(base, alpha=0.2, highpass=True)
+    mix = (1 - (p + 1) / 2)
+    out = [lp[i] * (1 - mix) + hp[i] * mix + lp[i] * 0.2 for i in range(n)]
+    _write_wav(path, out, sr)
+
+
+def render_routing(path, with_reverb, sr=44100, dur=2.0):
+    """A vocal-like tone; the 'with reverb' render adds a decaying tail."""
+    n = int(sr * dur)
+    dry = []
+    for i in range(n):
+        t = i / sr
+        env = math.exp(-3 * (t % 1.0))
+        s = env * (math.sin(2 * math.pi * 220 * t) + 0.4 * math.sin(2 * math.pi * 440 * t))
+        dry.append(0.25 * s)
+    if not with_reverb:
+        _write_wav(path, dry, sr)
+        return
+    # crude feedback-comb reverb -> longer, denser tail
+    out = list(dry)
+    for delay_s, gain in ((0.037, 0.5), (0.053, 0.4), (0.071, 0.35), (0.11, 0.3)):
+        d = int(delay_s * sr)
+        for i in range(d, n):
+            out[i] += gain * out[i - d]
+    peak = max(1e-6, max(abs(x) for x in out))
+    out = [x / peak * 0.8 for x in out]
+    _write_wav(path, out, sr)
+
+
+# --------------------------------------------------------------------------
+# MIDI file (format 1, one track)
+# --------------------------------------------------------------------------
+
+def write_midi(path, notes, division=480, name="Synth Pad"):
+    def vlq(n):
+        buf = bytearray([n & 0x7F])
+        n >>= 7
+        while n:
+            buf.insert(0, (n & 0x7F) | 0x80)
+            n >>= 7
+        return bytes(buf)
+
+    track = bytearray()
+    track += b"\x00" + b"\xFF\x03" + vlq(len(name)) + name.encode()
+    track += b"\x00" + b"\xFF\x51\x03" + struct.pack(">I", 500000)[1:]  # 120bpm
+    events = []
+    for (start, dur, key, vel) in notes:
+        events.append((int(start * division), 0x90, key, vel))
+        events.append((int((start + dur) * division), 0x80, key, 0))
+    events.sort(key=lambda e: e[0])
+    prev = 0
+    for (tick, status, key, vel) in events:
+        track += vlq(tick - prev) + bytes([status, key, vel])
+        prev = tick
+    track += b"\x00\xFF\x2F\x00"
+    header = b"MThd" + struct.pack(">IHHH", 6, 1, 1, division)
+    chunk = b"MTrk" + struct.pack(">I", len(track)) + bytes(track)
+    with open(path, "wb") as f:
+        f.write(header + chunk)
+
+
+# --------------------------------------------------------------------------
+# Fixture assembly
+# --------------------------------------------------------------------------
+
+def make_demo_session(path):
+    root, structure, arr, lanes = build_project()
+    master = add_master(structure)
+    add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effectTrack",
+              devices=[{"name": "REVerence", "role": "audioFX"}])
+    grp, grp_ch = add_track(structure, "Drum Bus", "ch-grp", master, role=None,
+                            volume=0.8)
+    add_track(structure, "Kick", "ch-kick", "ch-grp", color="#C44536",
+              devices=[{"name": "Frequency"}, {"name": "Compressor"}])
+    add_track(structure, "Snare", "ch-snare", "ch-grp",
+              devices=[{"name": "Frequency"}])
+    tr_vox, _ = add_track(
+        structure, "Lead Vox", "ch-vox", master, color="#D4A017", volume=0.9,
+        devices=[{"name": "StudioEQ"}, {"name": "DeEsser"}, {"name": "Tube Compressor"}],
+        sends=[{"destination": "ch-fx1", "level": 0.25}])
+    tr_pad, _ = add_track(structure, "Synth Pad", "ch-pad", master, content="notes",
+                          devices=[{"name": "Retrologue", "role": "instrument",
+                                    "element": "Vst3Plugin"}])
+    add_clip(lanes, "ch-vox", 0.0, 16.0, "Lead Vox Comp", audio="audio/vox.wav")
+    add_clip(lanes, "ch-pad", 0.0, 16.0, "Pad Part",
+             notes=[(0, 4, 60, 0.7), (4, 4, 64, 0.7), (8, 4, 67, 0.7), (12, 4, 72, 0.7)])
+    add_automation(lanes, "ch-vox", "Volume", [(0.0, 0.6), (8.0, 0.8), (16.0, 0.7)])
+    write_dawproject(root, path)
+
+
+def make_dualfilter(path, position):
+    root, structure, arr, lanes = build_project()
+    master = add_master(structure)
+    add_track(structure, "Gtr Wide", "ch-gtr", master, color="#2E86AB",
+              devices=[{"name": "DualFilter"}])
+    add_clip(lanes, "ch-gtr", 0.0, 8.0, "Gtr L+R", audio="audio/gtr.wav")
+    # Position exposed as a 1-point automation lane on the DualFilter param.
+    norm = (position + 1.0) / 2.0  # -1..1 -> 0..1
+    add_automation(lanes, "ch-gtr", "DualFilter/Position", [(0.0, round(norm, 4))])
+    write_dawproject(root, path)
+
+
+def make_routing(path, with_send):
+    root, structure, arr, lanes = build_project()
+    master = add_master(structure)
+    if with_send:
+        add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effectTrack",
+                  devices=[{"name": "REVerence"}])
+    sends = [{"destination": "ch-fx1", "level": 0.4}] if with_send else None
+    add_track(structure, "Lead Vox", "ch-vox", master, color="#D4A017",
+              devices=[{"name": "StudioEQ"}], sends=sends)
+    add_clip(lanes, "ch-vox", 0.0, 8.0, "Lead Vox", audio="audio/vox.wav")
+    write_dawproject(root, path)
+
+
+def main(argv):
+    out = argv[1] if len(argv) > 1 else os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixtures", "cubase")
+    os.makedirs(out, exist_ok=True)
+
+    make_demo_session(os.path.join(out, "demo_session.dawproject"))
+
+    make_dualfilter(os.path.join(out, "dualfilter_a.dawproject"), -0.5)
+    make_dualfilter(os.path.join(out, "dualfilter_b.dawproject"), +0.5)
+    render_dualfilter(os.path.join(out, "dualfilter_a.wav"), -0.5)
+    render_dualfilter(os.path.join(out, "dualfilter_b.wav"), +0.5)
+
+    make_routing(os.path.join(out, "routing_a.dawproject"), with_send=False)
+    make_routing(os.path.join(out, "routing_b.dawproject"), with_send=True)
+    render_routing(os.path.join(out, "routing_a.wav"), with_reverb=False)
+    render_routing(os.path.join(out, "routing_b.wav"), with_reverb=True)
+
+    write_midi(os.path.join(out, "notes.mid"),
+               [(0, 1, 60, 100), (1, 1, 64, 96), (2, 1, 67, 92), (3, 1, 72, 88)])
+
+    import json
+    manifest = {
+        "generator": "make_fixtures.py",
+        "format": "dawproject (open MIT format imported/exported by Cubase 14/15)",
+        "fixtures": {
+            "demo_session.dawproject": {
+                "expected": {"tracks_min": 5, "has_group": True, "has_fx_channel": True,
+                             "has_instrument": True, "has_automation": True, "tempo": 120.0}},
+            "dualfilter_a.dawproject": {"expected": {
+                "field": "automation[DualFilter/Position].points[0].value", "value": 0.25}},
+            "dualfilter_b.dawproject": {"expected": {
+                "field": "automation[DualFilter/Position].points[0].value", "value": 0.75}},
+            "routing_a.dawproject": {"expected": {"sends": 0}},
+            "routing_b.dawproject": {"expected": {"sends": 1, "new_node": "FX 1 - Plate"}},
+        },
+        "renders": ["dualfilter_a.wav", "dualfilter_b.wav", "routing_a.wav", "routing_b.wav"],
+    }
+    with open(os.path.join(out, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"Fixtures written to {out}")
+    for name in sorted(os.listdir(out)):
+        print("  ", name)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

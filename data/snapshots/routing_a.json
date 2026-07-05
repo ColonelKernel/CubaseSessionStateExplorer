@@ -1,0 +1,671 @@
+{
+  "schema_version": "0.1.0",
+  "session": {
+    "provenance": {
+      "status": "exported",
+      "confidence": 1.0,
+      "source": {
+        "type": "dawproject",
+        "artifact": "routing_a.dawproject",
+        "locator": null,
+        "evidence": null
+      },
+      "explanation": null,
+      "alternatives": []
+    },
+    "field_provenance": {},
+    "native": {},
+    "raw_source": {},
+    "schema_version": "0.1.0",
+    "adapter": {
+      "daw": "cubase",
+      "adapter_version": "0.1.0"
+    },
+    "project": {
+      "project_name": "routing_a",
+      "project_path": "fixtures/cubase/routing_a.dawproject",
+      "daw_dialect": "cubase",
+      "cubase_version": "15.0.10",
+      "sample_rate": null,
+      "frame_rate": null,
+      "record_format": null,
+      "project_start_seconds": null,
+      "project_length_seconds": null,
+      "left_locator_beats": null,
+      "right_locator_beats": null,
+      "tempo_mode": null
+    },
+    "tempo": 120.0,
+    "time_signature": "4/4",
+    "tracks": [
+      {
+        "provenance": {
+          "status": "exported",
+          "confidence": 1.0,
+          "source": {
+            "type": "dawproject",
+            "artifact": null,
+            "locator": "Track[tr-ch-vox]",
+            "evidence": null
+          },
+          "explanation": null,
+          "alternatives": []
+        },
+        "field_provenance": {
+          "volume_db": {
+            "status": "exported",
+            "confidence": 1.0,
+            "source": {
+              "type": "dawproject",
+              "artifact": null,
+              "locator": null,
+              "evidence": null
+            },
+            "explanation": null,
+            "alternatives": []
+          }
+        },
+        "native": {
+          "cubase": {
+            "dawproject_channel_id": "ch-vox"
+          }
+        },
+        "raw_source": {
+          "dawproject_id": "tr-ch-vox"
+        },
+        "id": "cubase:track-tr-ch-vox",
+        "index": 0,
+        "name": "Lead Vox",
+        "track_type": "audio",
+        "role": null,
+        "color": "#D4A017",
+        "parent_id": null,
+        "volume_db": -1.41,
+        "pan": 0.0,
+        "mute": false,
+        "solo": null,
+        "record_enabled": null,
+        "monitor": null,
+        "frozen": null,
+        "channel_config": "stereo",
+        "output_target_id": "cubase:track-tr-master",
+        "clips": [
+          {
+            "provenance": {
+              "status": "exported",
+              "confidence": 1.0,
+              "source": {
+                "type": "dawproject",
+                "artifact": null,
+                "locator": null,
+                "evidence": null
+              },
+              "explanation": null,
+              "alternatives": []
+            },
+            "field_provenance": {},
+            "native": {},
+            "raw_source": {},
+            "id": "cubase:clip-cubase-track-tr-ch-vox-0-0",
+            "track_id": "cubase:track-tr-ch-vox",
+            "name": "Lead Vox",
+            "clip_type": "audio",
+            "start_time_beats": 0.0,
+            "length_beats": 8.0,
+            "start_time_seconds": null,
+            "length_seconds": null,
+            "loop_start_beats": null,
+            "loop_end_beats": null,
+            "audio_file": "audio/vox.wav",
+            "media_id": null,
+            "midi_note_count": null,
+            "notes": []
+          }
+        ],
+        "devices": [
+          {
+            "provenance": {
+              "status": "exported",
+              "confidence": 1.0,
+              "source": {
+                "type": "dawproject",
+                "artifact": null,
+                "locator": "Device[dev-ch-vox-0]",
+                "evidence": null
+              },
+              "explanation": null,
+              "alternatives": []
+            },
+            "field_provenance": {
+              "parameters": {
+                "status": "unavailable",
+                "confidence": 0.0,
+                "source": {
+                  "type": "dawproject",
+                  "artifact": null,
+                  "locator": null,
+                  "evidence": null
+                },
+                "explanation": "Plug-in parameter values live in an opaque state blob (plugins/StudioEQ-ch-vox.vstpreset); DAWproject does not enumerate them.",
+                "alternatives": []
+              }
+            },
+            "native": {},
+            "raw_source": {},
+            "id": "cubase:device-dev-ch-vox-0",
+            "track_id": "cubase:track-tr-ch-vox",
+            "index": 0,
+            "name": "StudioEQ",
+            "vendor": null,
+            "plugin_identifier": "StudioEQ",
+            "plugin_format": "VST3",
+            "device_type": "audio_effect",
+            "device_family": null,
+            "enabled": true,
+            "bypassed": false,
+            "preset_name": null,
+            "state_blob_ref": "plugins/StudioEQ-ch-vox.vstpreset",
+            "latency_samples": null,
+            "parameters": []
+          }
+        ],
+        "sends": []
+      }
+    ],
+    "folders": [],
+    "return_tracks": [],
+    "groups": [],
+    "master_track": {
+      "provenance": {
+        "status": "exported",
+        "confidence": 1.0,
+        "source": {
+          "type": "dawproject",
+          "artifact": null,
+          "locator": "Track[tr-master]",
+          "evidence": null
+        },
+        "explanation": null,
+        "alternatives": []
+      },
+      "field_provenance": {
+        "volume_db": {
+          "status": "exported",
+          "confidence": 1.0,
+          "source": {
+            "type": "dawproject",
+            "artifact": null,
+            "locator": null,
+            "evidence": null
+          },
+          "explanation": null,
+          "alternatives": []
+        }
+      },
+      "native": {
+        "cubase": {
+          "channel_role": "master",
+          "dawproject_channel_id": "ch-master"
+        }
+      },
+      "raw_source": {
+        "dawproject_id": "tr-master"
+      },
+      "id": "cubase:track-tr-master",
+      "index": 0,
+      "name": "Stereo Out",
+      "track_type": "master",
+      "role": null,
+      "color": null,
+      "parent_id": null,
+      "volume_db": 0.0,
+      "pan": 0.0,
+      "mute": null,
+      "solo": null,
+      "record_enabled": null,
+      "monitor": null,
+      "frozen": null,
+      "channel_config": "stereo",
+      "output_target_id": null,
+      "clips": [],
+      "devices": [],
+      "sends": []
+    },
+    "routes": [
+      {
+        "provenance": {
+          "status": "exported",
+          "confidence": 1.0,
+          "source": {
+            "type": "dawproject",
+            "artifact": null,
+            "locator": null,
+            "evidence": null
+          },
+          "explanation": null,
+          "alternatives": []
+        },
+        "field_provenance": {},
+        "native": {},
+        "raw_source": {},
+        "id": "cubase:route-cubase-track-tr-ch-vox-ch-master",
+        "source_track_id": "cubase:track-tr-ch-vox",
+        "target_id": "cubase:track-tr-master",
+        "route_type": "output"
+      }
+    ],
+    "automation": [],
+    "musical_structure": {
+      "tempo_map": [
+        {
+          "time_beats": 0.0,
+          "bpm": 120.0,
+          "curve": "jump"
+        }
+      ],
+      "time_signatures": [],
+      "markers": [],
+      "chords": []
+    },
+    "score_state": {
+      "present": false,
+      "layouts": [],
+      "notes": null
+    },
+    "media": [],
+    "unknown_state": [
+      {
+        "id": "cubase:gap-chords",
+        "entity_id": null,
+        "state_gap": "chords",
+        "reason": "No available artifact reveals 'chords'.",
+        "potential_sources": [],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-input-routing",
+        "entity_id": null,
+        "state_gap": "input_routing",
+        "reason": "Input/monitoring routing is not carried by any external export.",
+        "potential_sources": [
+          "MIDI Remote runtime",
+          "custom Cubase extension"
+        ],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-markers",
+        "entity_id": null,
+        "state_gap": "markers",
+        "reason": "No available artifact reveals 'markers'.",
+        "potential_sources": [],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-notation-state",
+        "entity_id": null,
+        "state_gap": "notation_state",
+        "reason": "Score interpretation lives only in MusicXML / the project; the same MIDI performance yields many notations.",
+        "potential_sources": [
+          "MusicXML export",
+          "Dorico export"
+        ],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-plugin-parameters",
+        "entity_id": null,
+        "state_gap": "plugin_parameters",
+        "reason": "DAWproject stores plug-in state as an opaque blob; the CPR binary does not expose parameters; third-party VST3 params are not enumerable without loading the plug-in.",
+        "potential_sources": [
+          "VST preset export",
+          "track preset export",
+          "MIDI Remote Quick Controls",
+          "custom VST3 StateProbe"
+        ],
+        "severity": "notable"
+      },
+      {
+        "id": "cubase:gap-record-enable",
+        "entity_id": null,
+        "state_gap": "record_enable",
+        "reason": "No available artifact reveals 'record_enable'.",
+        "potential_sources": [],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-rendered-audio",
+        "entity_id": null,
+        "state_gap": "rendered_audio",
+        "reason": "No available artifact reveals 'rendered_audio'.",
+        "potential_sources": [],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-tempo-map",
+        "entity_id": null,
+        "state_gap": "tempo_map",
+        "reason": "No available artifact reveals 'tempo_map'.",
+        "potential_sources": [],
+        "severity": "info"
+      },
+      {
+        "id": "cubase:gap-param-cubase-device-dev-ch-vox-0",
+        "entity_id": "cubase:device-dev-ch-vox-0",
+        "state_gap": "insert_parameter_state",
+        "reason": "Parameter values for 'StudioEQ' are not exposed by the available surfaces (opaque plug-in state).",
+        "potential_sources": [
+          "VST preset export",
+          "MIDI Remote Quick Controls"
+        ],
+        "severity": "notable"
+      }
+    ],
+    "capture": {
+      "artifacts": [
+        "dawproject"
+      ],
+      "extractors_run": [
+        "dawproject"
+      ],
+      "coverage_percent": 72.1,
+      "captured_at": null
+    },
+    "warnings": [],
+    "metadata": {
+      "dawproject_application": "Cubase 15.0.10",
+      "coverage": {
+        "coverage_percent": 72.1,
+        "revealed": [
+          "audio_events",
+          "audio_file_refs",
+          "automation_events",
+          "automation_lanes",
+          "bypass_state",
+          "hierarchy",
+          "insert_identity",
+          "insert_order",
+          "midi_notes",
+          "midi_parts",
+          "mute_solo",
+          "output_routing",
+          "pan",
+          "project_metadata",
+          "send_levels",
+          "sends",
+          "tempo",
+          "time_signatures",
+          "track_color",
+          "track_name",
+          "track_type",
+          "volume",
+          "vst_instruments"
+        ],
+        "constrained": [
+          "folder_group_channel",
+          "plugin_preset",
+          "role"
+        ],
+        "hidden": [
+          "chords",
+          "input_routing",
+          "markers",
+          "notation_state",
+          "plugin_parameters",
+          "record_enable",
+          "rendered_audio",
+          "tempo_map"
+        ],
+        "n_fields": 34
+      }
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "project",
+        "type": "project",
+        "label": "routing_a",
+        "color": "#27AE60",
+        "tempo": 120.0,
+        "time_signature": "4/4",
+        "cubase_version": "15.0.10",
+        "coverage": 72.1,
+        "status": "parsed"
+      },
+      {
+        "id": "cubase:track-tr-ch-vox",
+        "type": "track",
+        "label": "Lead Vox",
+        "color": "#D4A017",
+        "track_type": "audio",
+        "role": null,
+        "volume_db": -1.41,
+        "pan": 0.0,
+        "mute": false,
+        "solo": null,
+        "status": "exported"
+      },
+      {
+        "id": "cubase:device-dev-ch-vox-0",
+        "type": "device",
+        "label": "StudioEQ",
+        "color": "#1F9D6B",
+        "index": 0,
+        "family": null,
+        "enabled": true,
+        "plugin_format": "VST3",
+        "status": "exported"
+      },
+      {
+        "id": "cubase:clip-cubase-track-tr-ch-vox-0-0",
+        "type": "clip",
+        "label": "Lead Vox",
+        "color": "#1F9D6B",
+        "start": 0.0,
+        "length": 8.0,
+        "notes": null,
+        "status": "exported"
+      },
+      {
+        "id": "media:audio/vox.wav",
+        "type": "media",
+        "label": "vox.wav",
+        "color": "#27AE60",
+        "path": "audio/vox.wav",
+        "status": "parsed"
+      },
+      {
+        "id": "cubase:track-tr-master",
+        "type": "master",
+        "label": "Stereo Out",
+        "color": null,
+        "track_type": "master",
+        "role": null,
+        "volume_db": 0.0,
+        "pan": 0.0,
+        "mute": null,
+        "solo": null,
+        "status": "exported"
+      },
+      {
+        "id": "cubase:gap-chords",
+        "type": "unknown_state",
+        "label": "chords",
+        "color": "#C0392B",
+        "reason": "No available artifact reveals 'chords'.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-input-routing",
+        "type": "unknown_state",
+        "label": "input_routing",
+        "color": "#C0392B",
+        "reason": "Input/monitoring routing is not carried by any external export.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-markers",
+        "type": "unknown_state",
+        "label": "markers",
+        "color": "#C0392B",
+        "reason": "No available artifact reveals 'markers'.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-notation-state",
+        "type": "unknown_state",
+        "label": "notation_state",
+        "color": "#C0392B",
+        "reason": "Score interpretation lives only in MusicXML / the project; the same MIDI performance yields many notations.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-plugin-parameters",
+        "type": "unknown_state",
+        "label": "plugin_parameters",
+        "color": "#C0392B",
+        "reason": "DAWproject stores plug-in state as an opaque blob; the CPR binary does not expose parameters; third-party VST3 params are not enumerable without loading the plug-in.",
+        "severity": "notable",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-record-enable",
+        "type": "unknown_state",
+        "label": "record_enable",
+        "color": "#C0392B",
+        "reason": "No available artifact reveals 'record_enable'.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-rendered-audio",
+        "type": "unknown_state",
+        "label": "rendered_audio",
+        "color": "#C0392B",
+        "reason": "No available artifact reveals 'rendered_audio'.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-tempo-map",
+        "type": "unknown_state",
+        "label": "tempo_map",
+        "color": "#C0392B",
+        "reason": "No available artifact reveals 'tempo_map'.",
+        "severity": "info",
+        "status": "unavailable"
+      },
+      {
+        "id": "cubase:gap-param-cubase-device-dev-ch-vox-0",
+        "type": "unknown_state",
+        "label": "insert_parameter_state",
+        "color": "#C0392B",
+        "reason": "Parameter values for 'StudioEQ' are not exposed by the available surfaces (opaque plug-in state).",
+        "severity": "notable",
+        "status": "unavailable"
+      }
+    ],
+    "edges": [
+      {
+        "source": "project",
+        "target": "cubase:track-tr-ch-vox",
+        "type": "CONTAINS"
+      },
+      {
+        "source": "cubase:device-dev-ch-vox-0",
+        "target": "cubase:track-tr-ch-vox",
+        "type": "INSERTED_ON",
+        "slot": 0
+      },
+      {
+        "source": "cubase:track-tr-ch-vox",
+        "target": "cubase:clip-cubase-track-tr-ch-vox-0-0",
+        "type": "CONTAINS"
+      },
+      {
+        "source": "cubase:clip-cubase-track-tr-ch-vox-0-0",
+        "target": "media:audio/vox.wav",
+        "type": "USES_MEDIA"
+      },
+      {
+        "source": "project",
+        "target": "cubase:track-tr-master",
+        "type": "CONTAINS"
+      },
+      {
+        "source": "cubase:track-tr-ch-vox",
+        "target": "cubase:track-tr-master",
+        "type": "SUMS",
+        "route_type": "output",
+        "status": "exported"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-chords",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-input-routing",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-markers",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-notation-state",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-plugin-parameters",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-record-enable",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-rendered-audio",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "project",
+        "target": "cubase:gap-tempo-map",
+        "type": "HAS_GAP"
+      },
+      {
+        "source": "cubase:device-dev-ch-vox-0",
+        "target": "cubase:gap-param-cubase-device-dev-ch-vox-0",
+        "type": "HAS_GAP"
+      }
+    ],
+    "metadata": {
+      "n_nodes": 15,
+      "n_edges": 15,
+      "n_tracks": 1,
+      "n_groups": 0,
+      "n_fx": 0,
+      "n_devices": 1,
+      "n_sends": 0,
+      "n_automation": 0,
+      "n_unknown": 9,
+      "coverage_percent": 72.1,
+      "status_counts": {
+        "parsed": 2,
+        "exported": 4,
+        "unavailable": 9
+      }
+    }
+  }
+}

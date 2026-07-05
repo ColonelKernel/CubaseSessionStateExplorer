@@ -1,0 +1,135 @@
+{
+  "experiment_id": "exp-001",
+  "intervention": {
+    "intervention_id": "int-001",
+    "type": "change_parameter",
+    "target": {
+      "entity_id": null,
+      "track": null,
+      "parameter": null,
+      "description": "automation:DualFilter/Position/values"
+    },
+    "before": [
+      0.25
+    ],
+    "after": [
+      0.75
+    ],
+    "note": "~ [PARAMETER] automation:DualFilter/Position/values: [0.25] -> [0.75]"
+  },
+  "observation_a": {
+    "observation_id": "obs-a",
+    "daw": "cubase",
+    "state_snapshot": "data/snapshots/dualfilter_a.json",
+    "render": "fixtures/cubase/dualfilter_a.wav",
+    "descriptors": {
+      "id": "cubase:desc-1",
+      "source_id": "obs-a",
+      "source_type": "mixdown",
+      "file_path": "fixtures/cubase/dualfilter_a.wav",
+      "duration_seconds": 2.0,
+      "sample_rate": 44100,
+      "rms_mean": 0.0727096446971106,
+      "rms_std": 0.037136861276102856,
+      "peak_amplitude": 0.143890380859375,
+      "crest_factor_db": 5.93,
+      "spectral_centroid_mean": 415.94,
+      "spectral_bandwidth_mean": 487.17,
+      "spectral_rolloff_mean": 796.73,
+      "zero_crossing_rate_mean": 0.005226816630574043,
+      "onset_rate_hz": null,
+      "stereo_width_proxy": null,
+      "dynamic_range_db": null,
+      "integrated_loudness_lufs": -24.08,
+      "mfcc_means": [],
+      "available": true,
+      "warnings": []
+    },
+    "intervention": null
+  },
+  "observation_b": {
+    "observation_id": "obs-b",
+    "daw": "cubase",
+    "state_snapshot": "data/snapshots/dualfilter_b.json",
+    "render": "fixtures/cubase/dualfilter_b.wav",
+    "descriptors": {
+      "id": "cubase:desc-2",
+      "source_id": "obs-b",
+      "source_type": "mixdown",
+      "file_path": "fixtures/cubase/dualfilter_b.wav",
+      "duration_seconds": 2.0,
+      "sample_rate": 44100,
+      "rms_mean": 0.15357200484800373,
+      "rms_std": 0.07843280290110947,
+      "peak_amplitude": 0.30023193359375,
+      "crest_factor_db": 5.82,
+      "spectral_centroid_mean": 404.46,
+      "spectral_bandwidth_mean": 408.27,
+      "spectral_rolloff_mean": 775.2,
+      "zero_crossing_rate_mean": 0.004988718692955703,
+      "onset_rate_hz": null,
+      "stereo_width_proxy": null,
+      "dynamic_range_db": null,
+      "integrated_loudness_lufs": -17.59,
+      "mfcc_means": [],
+      "available": true,
+      "warnings": []
+    },
+    "intervention": null
+  },
+  "state_delta": {
+    "summary": {
+      "PARAMETER": 1
+    },
+    "changes": [
+      "~ [PARAMETER] automation:DualFilter/Position/values: [0.25] -> [0.75]"
+    ]
+  },
+  "audio_delta": {
+    "rms_mean": {
+      "a": 0.0727096446971106,
+      "b": 0.15357200484800373,
+      "delta": 0.080862
+    },
+    "peak_amplitude": {
+      "a": 0.143890380859375,
+      "b": 0.30023193359375,
+      "delta": 0.156342
+    },
+    "crest_factor_db": {
+      "a": 5.93,
+      "b": 5.82,
+      "delta": -0.11
+    },
+    "spectral_centroid_mean": {
+      "a": 415.94,
+      "b": 404.46,
+      "delta": -11.48
+    },
+    "spectral_rolloff_mean": {
+      "a": 796.73,
+      "b": 775.2,
+      "delta": -21.53
+    },
+    "spectral_bandwidth_mean": {
+      "a": 487.17,
+      "b": 408.27,
+      "delta": -78.9
+    },
+    "zero_crossing_rate_mean": {
+      "a": 0.005226816630574043,
+      "b": 0.004988718692955703,
+      "delta": -0.000238
+    },
+    "integrated_loudness_lufs": {
+      "a": -24.08,
+      "b": -17.59,
+      "delta": 6.49
+    },
+    "duration_seconds": {
+      "a": 2.0,
+      "b": 2.0,
+      "delta": 0.0
+    }
+  }
+}
