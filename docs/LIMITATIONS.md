@@ -32,8 +32,19 @@ contribution — not a disclaimer to bury.
    artifacts is the documented next tier (`CUBASE_FIXTURE_PROTOCOL.md`).
 9. **DAWproject variability.** Exporters vary (element vs. attribute placement,
    device element names). The parser is tolerant and keeps unknowns in
-   `raw_source`, but has been validated against our fixtures + the published
-   spec, not the full matrix of real-world exporters.
+   `raw_source`. It is validated against our fixtures, the published XSD, **and a
+   real Bitwig-exported example** (`tests/test_real_dawproject.py`) — but not yet
+   against a genuine *Cubase*-emitted file (the documented next step needs a
+   licensed Cubase; see `CUBASE_EXPORT_INSTRUCTIONS.md`).
+
+10. **Cubase's exporter is narrower than the format.** Independent testing +
+    Steinberg staff confirm Cubase 15's DAWproject export commonly **omits
+    automation**, and does not export **MIDI CC/CC64/Note Expression/channel
+    strip/crossfades**; **plug-in state is best-effort** (engine recreated,
+    settings often lost). So a real Cubase export may legitimately yield no
+    automation lanes and opaque inserts — reported honestly, not a parser bug.
+    Enumerable built-in-device `<Parameters>` (when Cubase writes them) *are*
+    read as observed values. See `CUBASE_CAPABILITY_MATRIX.md`.
 
 ## Known sharp edges
 

@@ -34,6 +34,7 @@ from ..models import (
     AutomationLane,
     AutomationPoint,
     ClipState,
+    DeviceParameterState,
     DeviceState,
     FolderState,
     MediaFile,
@@ -50,6 +51,29 @@ from ..provenance import exported, parsed, unavailable
 from ..utils import linear_to_db, safe_float, safe_int
 
 DAWPROJECT_SOURCE = "dawproject"
+
+# The set of DAWproject element localnames this parser reads meaningfully.
+# The `diagnose` harness compares a real file's element census against this set
+# so anything Cubase emits that we don't yet handle surfaces immediately —
+# turning "validate against a real export" into a concrete, mechanical loop.
+HANDLED_ELEMENTS: frozenset[str] = frozenset({
+    "Project", "Application", "MetaData",
+    "Transport", "Tempo", "TimeSignature",
+    "Structure", "Track", "Channel", "Volume", "Pan", "Mute",
+    "Devices", "Vst3Plugin", "Vst2Plugin", "ClapPlugin", "BuiltinDevice",
+    "Device", "AuPlugin", "Plugin", "Auv3Plugin",
+    "Equalizer", "Compressor", "NoiseGate", "Limiter",  # BuiltinDevice subtypes
+    "Enabled", "State", "Parameters",
+    "RealParameter", "BoolParameter", "IntegerParameter", "EnumParameter",
+    "parameter", "TimeSignatureParameter",
+    "Sends", "Send", "Enable",
+    "Arrangement", "Lanes", "Clips", "Clip", "ClipSlot",
+    "Notes", "Note", "Warps", "Warp", "Audio", "Video", "File",
+    "Points", "Target", "RealPoint", "Point", "BoolPoint",
+    "IntegerPoint", "EnumPoint", "TimeSignaturePoint",
+    "TempoAutomation", "TimeSignatureAutomation",
+    "Markers", "markers", "Marker", "Scenes", "Scene",
+})
 
 # Content types seen on <Track contentType="...">
 _TRACK_TYPE_MAP = {
@@ -167,9 +191,18 @@ def extract(path: str) -> DawprojectResult:
     # --- Structure: tracks & channels --------------------------------------
     structure = _find(root, "Structure")
     channel_index: dict[str, dict[str, Any]] = {}  # channel/track native id -> info
+    # param id -> {owner_id, owner_kind, name, unit}; for automation Target IDREFs.
+    param_index: dict[str, dict[str, Any]] = {}
 
     if structure is not None:
-        _walk_tracks(structure, session, channel_index, parent_id=None, depth=0)
+        _walk_tracks(structure, session, channel_index, param_index,
+                     parent_id=None, depth=0)
+        # Standalone <Channel> children of <Structure> (master/effect/submix/vca
+        # buses that are NOT wrapped in a <Track>). Real DAWproject / Cubase output
+        # routinely places the master and FX/group channels here.
+        for el in structure:
+            if _localname(el.tag) == "Channel":
+                _read_standalone_channel(el, session, channel_index, param_index)
 
     # --- Resolve routing destinations (channel destination -> track) -------
     _resolve_routing(session, channel_index)
@@ -177,7 +210,7 @@ def extract(path: str) -> DawprojectResult:
     # --- Arrangement: clips / notes / automation ---------------------------
     arrangement = _find(root, "Arrangement")
     if arrangement is not None:
-        _walk_arrangement(arrangement, session, channel_index)
+        _walk_arrangement(arrangement, session, channel_index, param_index)
 
     # --- Media files -------------------------------------------------------
     for name in members:
@@ -200,6 +233,7 @@ def _walk_tracks(
     parent_el: ET.Element,
     session: SessionState,
     channel_index: dict[str, dict[str, Any]],
+    param_index: dict[str, dict[str, Any]],
     parent_id: Optional[str],
     depth: int,
 ) -> None:
@@ -234,24 +268,10 @@ def _walk_tracks(
             track.native.setdefault("cubase", {})["channel_role"] = role_hint
 
         if channel_el is not None:
-            _read_channel(channel_el, track, session, channel_index, native_id)
+            _read_channel(channel_el, track, session, channel_index, param_index, native_id)
 
-        # Classify FX/group by channel role.
-        if "effectTrack" in role_hint or ttype == "fx":
-            track.track_type = "fx"
-        elif role_hint == "master":
-            track.track_type = "master"
-
-        # Route the track into the right bucket.
-        if track.track_type == "master":
-            session.master_track = track
-        elif track.track_type == "fx":
-            session.return_tracks.append(track)
-        elif track.track_type == "group" or (sub_tracks and channel_el is not None):
-            # Folder that also has a channel => group-channel-enabled folder.
-            session.groups.append(track)
-        else:
-            session.tracks.append(track)
+        _bucket_track(session, track, has_children=bool(sub_tracks),
+                      has_channel=channel_el is not None)
 
         # Folder bookkeeping (organizational vs group-channel-enabled).
         if sub_tracks:
@@ -271,7 +291,8 @@ def _walk_tracks(
             )
             folder.native.setdefault("cubase", {})["has_channel"] = channel_el is not None
             session.folders.append(folder)
-            _walk_tracks(el, session, channel_index, parent_id=tid, depth=depth + 1)
+            _walk_tracks(el, session, channel_index, param_index,
+                         parent_id=tid, depth=depth + 1)
 
     # Fill folder child ids from parent_id links.
     for folder in session.folders:
@@ -281,14 +302,77 @@ def _walk_tracks(
         ] or folder.child_track_ids
 
 
+def _bucket_track(session: SessionState, track: TrackState, *,
+                  has_children: bool, has_channel: bool) -> None:
+    """Route a parsed track into the right SessionState collection by type."""
+    if track.track_type == "master":
+        session.master_track = track
+    elif track.track_type == "fx":
+        session.return_tracks.append(track)
+    elif track.track_type == "group" or (has_children and has_channel):
+        session.groups.append(track)
+    else:
+        session.tracks.append(track)
+
+
+def _read_standalone_channel(
+    channel_el: ET.Element,
+    session: SessionState,
+    channel_index: dict[str, dict[str, Any]],
+    param_index: dict[str, dict[str, Any]],
+) -> None:
+    """A <Channel> directly under <Structure> (a master/FX/group/vca bus not
+    wrapped in a <Track>). Real DAWproject output emits buses this way."""
+    native_id = channel_el.get("id") or channel_el.get("name") or f"chan{len(session.groups)}"
+    role = (channel_el.get("role") or "").lower()
+    if channel_index.get(native_id, {}).get("track_id"):
+        return  # already indexed (was owned by a Track)
+    name = channel_el.get("name") or {
+        "master": "Stereo Out", "effect": "FX Channel", "submix": "Group",
+        "vca": "VCA",
+    }.get(role, "Channel")
+    track = TrackState(
+        id=stable_id("track", native_id),
+        index=len(session.all_tracks()),
+        name=name,
+        track_type=_classify_track_type("audio", role, False),
+        color=channel_el.get("color"),
+    )
+    track.provenance = exported(source_type=DAWPROJECT_SOURCE,
+                                locator=f"Channel[{native_id}]")
+    if role:
+        track.native.setdefault("cubase", {})["channel_role"] = role
+        track.native["cubase"]["standalone_channel"] = True
+    _read_channel(channel_el, track, session, channel_index, param_index, native_id)
+    _bucket_track(session, track, has_children=False, has_channel=True)
+
+
 def _classify_track_type(ttype: str, role: str, has_children: bool) -> str:
-    if role == "master":
+    """Map a DAWproject mixerRole (regular|master|effect|submix|vca) + content
+    type + nesting onto our canonical track_type. Exact enum, not substring."""
+    r = (role or "").lower()
+    if r == "master":
         return "master"
-    if "effect" in role.lower():
+    if r == "effect":
         return "fx"
+    if r in ("submix", "vca"):
+        return "group"
     if has_children:
+        # a nested container: group if it has its own channel, else organizational
         return "group" if role else "folder"
     return ttype
+
+
+def _pan_to_canonical(pan: float, unit: Optional[str]) -> float:
+    """Convert a DAWproject pan value to our -1..1 (L..R, 0=center) convention.
+
+    ``normalized`` pans are 0..1 with 0.5 center; ``linear`` pans are already
+    roughly -1..1 with 0 center. Do NOT hardcode a 0.5 offset for all units.
+    """
+    u = (unit or "normalized").lower()
+    if u == "normalized":
+        return round((pan - 0.5) * 2.0, 3)
+    return round(pan, 3)  # linear / other: assume already centered on 0
 
 
 def _read_channel(
@@ -296,6 +380,7 @@ def _read_channel(
     track: TrackState,
     session: SessionState,
     channel_index: dict[str, dict[str, Any]],
+    param_index: dict[str, dict[str, Any]],
     native_track_id: str,
 ) -> None:
     native_channel_id = channel_el.get("id") or native_track_id
@@ -315,8 +400,7 @@ def _read_channel(
         track.field_provenance["volume_db"] = exported(source_type=DAWPROJECT_SOURCE)
     pan = _param_value(pan_el)
     if pan is not None:
-        # DAWproject pan is 0..1 with 0.5 center; convert to -1..1.
-        track.pan = round((pan - 0.5) * 2.0, 3)
+        track.pan = _pan_to_canonical(pan, pan_el.get("unit") if pan_el is not None else None)
     mv = _param_value(mute_el)
     if mute_el is not None:
         track.mute = bool(mv) if mv is not None else (mute_el.get("value") == "true")
@@ -326,6 +410,14 @@ def _read_channel(
     cfg = channel_el.get("audioChannels")
     if cfg:
         track.channel_config = {"1": "mono", "2": "stereo"}.get(cfg, f"{cfg}ch")
+
+    # Register channel-level parameters so automation Targets (IDREFs) resolve.
+    for pel, pname in ((vol_el, "Volume"), (pan_el, "Pan"), (mute_el, "Mute")):
+        if pel is not None and pel.get("id"):
+            param_index[pel.get("id")] = {
+                "owner_id": track.id, "owner_kind": "channel",
+                "name": pname, "unit": pel.get("unit"),
+            }
 
     channel_index[native_channel_id] = {
         "track_id": track.id,
@@ -340,7 +432,7 @@ def _read_channel(
     # Devices (inserts / instruments).
     devices_el = _find(channel_el, "Devices")
     if devices_el is not None:
-        _read_devices(devices_el, track, session)
+        _read_devices(devices_el, track, session, param_index)
 
     # Sends.
     sends_el = _find(channel_el, "Sends")
@@ -349,12 +441,22 @@ def _read_channel(
 
 
 _DEVICE_ELEMENTS = {"Vst3Plugin", "Vst2Plugin", "ClapPlugin", "BuiltinDevice",
-                    "Device", "AuPlugin", "Plugin"}
+                    "Device", "AuPlugin", "Auv3Plugin", "Plugin",
+                    "Equalizer", "Compressor", "NoiseGate", "Limiter"}
 _FORMAT_MAP = {"Vst3Plugin": "VST3", "Vst2Plugin": "VST2", "ClapPlugin": "internal",
-               "AuPlugin": "AU", "BuiltinDevice": "internal"}
+               "AuPlugin": "AU", "Auv3Plugin": "AU", "BuiltinDevice": "internal",
+               "Equalizer": "internal", "Compressor": "internal",
+               "NoiseGate": "internal", "Limiter": "internal"}
+# Built-in device element localnames that imply a device_family without a name.
+_BUILTIN_FAMILY = {"Equalizer": "EQ", "Compressor": "Dynamics",
+                   "NoiseGate": "Dynamics", "Limiter": "Dynamics"}
+# DAWproject parameter element localnames inside <Parameters>.
+_PARAM_ELEMENTS = {"RealParameter", "BoolParameter", "IntegerParameter",
+                   "EnumParameter", "TimeSignatureParameter", "parameter"}
 
 
-def _read_devices(devices_el: ET.Element, track: TrackState, session: SessionState) -> None:
+def _read_devices(devices_el: ET.Element, track: TrackState, session: SessionState,
+                  param_index: dict[str, dict[str, Any]]) -> None:
     slot = 0
     for el in devices_el:
         lname = _localname(el.tag)
@@ -362,7 +464,7 @@ def _read_devices(devices_el: ET.Element, track: TrackState, session: SessionSta
             continue
         dev_name = el.get("deviceName") or el.get("name") or lname
         dev_id = el.get("id") or f"{track.id}-dev{slot}"
-        role = (el.get("deviceRole") or "").lower()
+        role = (el.get("deviceRole") or "").lower()  # instrument|noteFX|audioFX|analyzer
         enabled_el = _find(el, "Enabled")
         enabled = None
         if enabled_el is not None:
@@ -381,22 +483,79 @@ def _read_devices(devices_el: ET.Element, track: TrackState, session: SessionSta
             plugin_identifier=el.get("deviceID"),
             plugin_format=_FORMAT_MAP.get(lname, "unknown"),
             device_type="instrument" if role == "instrument" else "audio_effect",
+            device_family=_BUILTIN_FAMILY.get(lname),  # e.g. Equalizer -> EQ
             enabled=enabled,
             bypassed=(enabled is False) if enabled is not None else None,
             state_blob_ref=blob_ref,
         )
         device.provenance = exported(source_type=DAWPROJECT_SOURCE, locator=f"Device[{dev_id}]")
-        # Honest: parameter values are opaque inside the state blob.
-        if blob_ref:
+
+        # Enumerable <Parameters> (built-in devices expose real values here —
+        # a genuine, honest window past the opaque-plug-in-state wall).
+        params_el = _find(el, "Parameters")
+        _read_parameters(params_el, device, param_index)
+
+        # Only claim parameters are UNAVAILABLE when they are genuinely opaque:
+        # an external state blob and no enumerable parameters.
+        if blob_ref and not device.parameters:
             device.field_provenance["parameters"] = unavailable(
                 "Plug-in parameter values live in an opaque state blob "
-                f"({blob_ref}); DAWproject does not enumerate them.",
+                f"({blob_ref}); DAWproject does not enumerate them for this device.",
                 source_type=DAWPROJECT_SOURCE,
             )
         if role == "instrument":
             track.native.setdefault("cubase", {})["is_instrument_track"] = True
         track.devices.append(device)
         slot += 1
+
+
+def _read_parameters(
+    params_el: Optional[ET.Element],
+    device: DeviceState,
+    param_index: dict[str, dict[str, Any]],
+) -> None:
+    """Parse a device's <Parameters> children into DeviceParameterState.
+
+    Handles Real/Bool/Integer/Enum parameters. Values ARE observed here (unlike
+    an opaque State blob), so each is registered in ``param_index`` so an
+    automation Target IDREF can bind to it, and marked ``exported``.
+    """
+    if params_el is None:
+        return
+    for i, p in enumerate(params_el):
+        lname = _localname(p.tag)
+        if lname not in _PARAM_ELEMENTS:
+            continue
+        pid = p.get("id") or f"{device.id}-p{i}"
+        pname = p.get("name") or lname
+        raw = p.get("value")
+        value: object = None
+        normalized = None
+        if lname == "BoolParameter":
+            value = (raw == "true") if raw is not None else None
+        elif lname in ("IntegerParameter", "EnumParameter"):
+            value = safe_int(raw)
+        else:  # RealParameter / parameter
+            value = safe_float(raw)
+            unit = (p.get("unit") or "").lower()
+            if value is not None and unit == "normalized":
+                normalized = value
+        param = DeviceParameterState(
+            id=stable_id("param", pid),
+            device_id=device.id,
+            name=pname,
+            value=value,
+            normalized_value=normalized,
+            unit=p.get("unit"),
+            is_visible_to_host=True,
+        )
+        param.provenance = exported(source_type=DAWPROJECT_SOURCE)
+        device.parameters.append(param)
+        if p.get("id"):
+            param_index[p.get("id")] = {
+                "owner_id": device.id, "owner_kind": "device",
+                "name": pname, "unit": p.get("unit"),
+            }
 
 
 def _read_sends(
@@ -410,16 +569,32 @@ def _read_sends(
             continue
         dest = el.get("destination")
         vol_el = _find(el, "Volume")
-        level = _param_value(vol_el)
         pan_el = _find(el, "Pan")
+        enable_el = _find(el, "Enable")  # NOTE: 'Enable' (send), not 'Enabled' (device)
+
+        level = _param_value(vol_el)
+        level_db = None
+        if level is not None:
+            unit = (vol_el.get("unit") if vol_el is not None else None) or "linear"
+            level_db = round(level, 2) if unit == "decibel" else linear_to_db(level)
+
+        pan_val = _param_value(pan_el)
+        enabled = None
+        if enable_el is not None:
+            ev = enable_el.get("value")
+            enabled = (ev == "true") if ev is not None else True
+
+        stype = (el.get("type") or "").lower()  # 'pre' | 'post'
         send = SendState(
-            id=stable_id("send", track.id, dest or str(len(track.sends))),
+            id=stable_id("send", track.id, dest or el.get("id") or str(len(track.sends))),
             source_track_id=track.id,
             target_return_id=dest or "",  # resolved later
-            level_db=linear_to_db(level) if level is not None else None,
-            pan=(_param_value(pan_el) - 0.5) * 2 if _param_value(pan_el) is not None else None,
-            enabled=el.get("enable", "true") != "false",
-            pre_fader=(el.get("type", "").lower() == "pre") if el.get("type") else None,
+            send_name=el.get("name"),
+            level_db=level_db,
+            pan=_pan_to_canonical(pan_val, pan_el.get("unit") if pan_el is not None else None)
+            if pan_val is not None else None,
+            enabled=enabled,
+            pre_fader=(stype == "pre") if stype else None,
         )
         send.provenance = exported(source_type=DAWPROJECT_SOURCE)
         send.raw_source["dawproject_destination"] = dest
@@ -484,15 +659,17 @@ def _walk_arrangement(
     arrangement: ET.Element,
     session: SessionState,
     channel_index: dict[str, dict[str, Any]],
+    param_index: dict[str, dict[str, Any]],
 ) -> None:
     lanes = _find(arrangement, "Lanes")
-    if lanes is None:
-        return
-    _walk_lanes(lanes, session, channel_index)
+    if lanes is not None:
+        _read_track_lane(lanes, session, channel_index, param_index,
+                         _lane_track_id(lanes, channel_index))
 
-    # Markers can appear as a top-level lane/points structure.
-    markers_el = _find(arrangement, "Markers")
-    if markers_el is not None:
+    # Markers: 'Markers' at Arrangement level (also 'markers' lowercase inside lanes).
+    for markers_el in arrangement:
+        if _localname(markers_el.tag) not in ("Markers", "markers"):
+            continue
         for m in markers_el:
             if _localname(m.tag) != "Marker":
                 continue
@@ -514,38 +691,30 @@ def _lane_track_id(el: ET.Element, channel_index: dict[str, dict[str, Any]]) -> 
     return None
 
 
-def _walk_lanes(
-    lanes_el: ET.Element,
-    session: SessionState,
-    channel_index: dict[str, dict[str, Any]],
-) -> None:
-    for el in lanes_el:
-        lname = _localname(el.tag)
-        if lname == "Lanes":
-            tid = _lane_track_id(el, channel_index)
-            _read_track_lane(el, session, channel_index, tid)
-        elif lname in ("Clips", "Notes", "Points"):
-            _read_track_lane(lanes_el, session, channel_index, _lane_track_id(lanes_el, channel_index))
-            return
-
-
 def _read_track_lane(
     lane_el: ET.Element,
     session: SessionState,
     channel_index: dict[str, dict[str, Any]],
+    param_index: dict[str, dict[str, Any]],
     track_id: Optional[str],
 ) -> None:
+    """Recursively walk a Lanes/timeline. Content associates to a track via the
+    nearest enclosing 'track' IDREF, so we thread the resolved track_id down."""
+    here = _lane_track_id(lane_el, channel_index) or track_id
     for el in lane_el:
         lname = _localname(el.tag)
         if lname == "Clips":
             for clip_el in el:
                 if _localname(clip_el.tag) == "Clip":
-                    _read_clip(clip_el, session, track_id)
-        elif lname == "Points":
-            _read_automation(el, session, track_id)
+                    _read_clip(clip_el, session, _lane_track_id(el, channel_index) or here)
+        elif lname == "Notes":
+            # A bare Notes timeline (not inside a Clip) — synthesize a midi clip.
+            _read_notes_lane(el, session, _lane_track_id(el, channel_index) or here)
+        elif lname in ("Points", "TempoAutomation", "TimeSignatureAutomation"):
+            _read_automation(el, session, param_index,
+                             _lane_track_id(el, channel_index) or here)
         elif lname == "Lanes":
-            _read_track_lane(el, session, channel_index,
-                             _lane_track_id(el, channel_index) or track_id)
+            _read_track_lane(el, session, channel_index, param_index, here)
 
 
 def _read_clip(clip_el: ET.Element, session: SessionState, track_id: Optional[str]) -> None:
@@ -570,20 +739,7 @@ def _read_clip(clip_el: ET.Element, session: SessionState, track_id: Optional[st
     clip.provenance = exported(source_type=DAWPROJECT_SOURCE)
 
     if notes_el is not None:
-        for n in notes_el:
-            if _localname(n.tag) != "Note":
-                continue
-            clip.notes.append(
-                MidiNote(
-                    time_beats=safe_float(n.get("time")) or 0.0,
-                    duration_beats=safe_float(n.get("duration")) or 0.0,
-                    key=safe_int(n.get("key")) or 0,
-                    velocity=int((safe_float(n.get("vel")) or 0.78) * 127)
-                    if n.get("vel") and float(n.get("vel")) <= 1.0
-                    else (safe_int(n.get("vel")) or 100),
-                    channel=safe_int(n.get("channel")) or 0,
-                )
-            )
+        clip.notes = _read_notes(notes_el)
         clip.midi_note_count = len(clip.notes)
 
     # Audio file reference nested in Clips/Warps/Audio/File.
@@ -601,25 +757,161 @@ def _read_clip(clip_el: ET.Element, session: SessionState, track_id: Optional[st
         t.clips.append(clip)
 
 
-def _read_automation(points_el: ET.Element, session: SessionState, track_id: Optional[str]) -> None:
+_NORM_VEL = 127.0  # DAWproject vel/rel are normalized 0..1; scale to MIDI 0..127.
+_POINT_ELEMENTS = ("RealPoint", "Point", "BoolPoint", "IntegerPoint",
+                   "EnumPoint", "TimeSignaturePoint")
+
+
+def _read_notes(notes_el: ET.Element) -> list[MidiNote]:
+    """Parse <Note> children. vel/rel are NORMALIZED 0..1 doubles (NOT 0..127)."""
+    out: list[MidiNote] = []
+    for n in notes_el:
+        if _localname(n.tag) != "Note":
+            continue
+        vel = safe_float(n.get("vel"))
+        rel = safe_float(n.get("rel"))
+        out.append(
+            MidiNote(
+                time_beats=safe_float(n.get("time")) or 0.0,
+                duration_beats=safe_float(n.get("duration")) or 0.0,
+                key=safe_int(n.get("key")) or 0,
+                velocity=round(vel * _NORM_VEL) if vel is not None else 100,
+                release_velocity=round(rel * _NORM_VEL) if rel is not None else None,
+                channel=safe_int(n.get("channel")) or 0,
+            )
+        )
+    return out
+
+
+def _read_notes_lane(notes_el: ET.Element, session: SessionState,
+                     track_id: Optional[str]) -> None:
+    """A Notes timeline that is a direct lane (not wrapped in a Clip)."""
     if not track_id:
         return
-    target = points_el.get("target") or points_el.get("parameter") or "parameter"
+    notes = _read_notes(notes_el)
+    if not notes:
+        return
+    clip = ClipState(
+        id=stable_id("clip", track_id, "notes"),
+        track_id=track_id, name="Notes", clip_type="midi",
+        start_time_beats=notes[0].time_beats, notes=notes,
+        midi_note_count=len(notes),
+    )
+    clip.provenance = exported(source_type=DAWPROJECT_SOURCE)
+    t = session.track_by_id(track_id)
+    if t is not None:
+        t.clips.append(clip)
+
+
+def _read_automation(
+    points_el: ET.Element,
+    session: SessionState,
+    param_index: dict[str, dict[str, Any]],
+    track_id: Optional[str],
+) -> None:
+    """Parse a <Points> automation lane. The FIRST child is a <Target> whose
+    ``parameter`` IDREF (or ``expression``) says what is automated."""
+    target_el = _find(points_el, "Target")
+    param_ref = target_el.get("parameter") if target_el is not None else None
+    expression = target_el.get("expression") if target_el is not None else None
+
+    device_id = None
+    if param_ref and param_ref in param_index:
+        info = param_index[param_ref]
+        param_name = info["name"]
+        if info["owner_kind"] == "device":
+            device_id = info["owner_id"]
+            track_id = track_id or session.device_by_id(device_id).track_id \
+                if session.device_by_id(device_id) else track_id
+        else:  # channel parameter
+            track_id = track_id or info["owner_id"]
+    else:
+        # Unresolved IDREF or MIDI-expression automation.
+        param_name = expression or (f"param:{param_ref}" if param_ref else "parameter")
+
+    if not track_id:
+        return
+
     lane = AutomationLane(
-        id=stable_id("auto", track_id, target),
+        id=stable_id("auto", track_id, param_name, param_ref or expression or "x"),
         track_id=track_id,
-        parameter_name=target,
+        parameter_name=param_name,
+        device_id=device_id,
+        parameter_id=param_ref,
+        unit=points_el.get("unit"),
     )
     lane.provenance = exported(source_type=DAWPROJECT_SOURCE)
+    if param_ref and param_ref not in param_index:
+        lane.field_provenance["parameter_name"] = parsed(
+            DAWPROJECT_SOURCE, confidence=0.4,
+            explanation=f"automation Target parameter IDREF '{param_ref}' did not "
+                        "resolve to a known parameter id.",
+        )
     for p in points_el:
-        if _localname(p.tag) not in ("RealPoint", "Point", "BoolPoint"):
+        if _localname(p.tag) not in _POINT_ELEMENTS:
             continue
+        raw = p.get("value")
+        val = safe_float(raw)
+        if val is None and raw == "true":
+            val = 1.0
+        elif val is None and raw == "false":
+            val = 0.0
         lane.points.append(
             AutomationPoint(
                 time_beats=safe_float(p.get("time")) or 0.0,
-                value=safe_float(p.get("value")) or 0.0,
+                value=val if val is not None else 0.0,
                 curve="step" if p.get("interpolation") == "hold" else "linear",
             )
         )
     if lane.points:
         session.automation.append(lane)
+
+
+def element_census(path: str) -> dict:
+    """Walk a real ``.dawproject``'s XML and report handled vs. unhandled elements.
+
+    This is the grounding harness for real Cubase exports: it tallies every
+    element localname (and the attributes seen on it) and flags any that the
+    parser does not yet handle, so hardening against genuine output is a
+    mechanical diff rather than a guessing game. Read-only, never raises.
+    """
+    from collections import Counter
+
+    root, members, warnings = load_project_xml(path)
+    census: dict = {
+        "path": path,
+        "members": members,
+        "warnings": list(warnings),
+        "element_counts": {},
+        "unhandled_elements": {},
+        "attributes_by_element": {},
+        "channel_roles": [],
+        "device_elements": [],
+        "unit_values": [],
+    }
+    if root is None:
+        return census
+
+    counts: Counter[str] = Counter()
+    attrs: dict[str, set] = {}
+    for el in root.iter():
+        name = _localname(el.tag)
+        counts[name] += 1
+        attrs.setdefault(name, set()).update(el.attrib.keys())
+        if name == "Channel" and el.get("role"):
+            census["channel_roles"].append(el.get("role"))
+        if name in _DEVICE_ELEMENTS:
+            census["device_elements"].append(name)
+        unit = el.get("unit")
+        if unit:
+            census["unit_values"].append(unit)
+
+    census["element_counts"] = dict(counts.most_common())
+    census["unhandled_elements"] = {
+        n: c for n, c in counts.items() if n not in HANDLED_ELEMENTS
+    }
+    census["attributes_by_element"] = {n: sorted(a) for n, a in sorted(attrs.items())}
+    census["channel_roles"] = sorted(set(census["channel_roles"]))
+    census["device_elements"] = sorted(set(census["device_elements"]))
+    census["unit_values"] = sorted(set(census["unit_values"]))
+    return census

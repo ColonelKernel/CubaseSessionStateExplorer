@@ -41,6 +41,27 @@ Inspected 2026-07-05.
 | File-signature databases (fileinfo, filext, justsolve) | various | `.cpr` is RIFF-based; tokens `NUNDROOT`, `CmObject`, `PAppVersion`, `RIFF`, `ROOT`; a common signature `EC CE 00 01 …`. | Used only to seed `cpr_lab` container-token detection; each hit is emitted as low-confidence evidence with an offset. |
 | Steinberg forum: "Track Archive XML Specification"; "Legality of reverse-engineering Cubase formats" | forums.steinberg.net | Community discussion; no official Track Archive schema published. | We treat Track Archive parsing as cautious/heuristic and stay within user-owned-file inspection. |
 
+## Addendum (2026-07-05): DAWproject spec + Cubase-writer grounding
+
+Deep-dive to harden the importer against the *real* spec (drove the parser fixes
+for channel-role enums, standalone `<Channel>`, built-in devices, `<Send><Enable>`,
+`<Points><Target>`, normalized velocity, unit-aware pan).
+
+**Tier 2 — spec (authoritative structure):**
+- `Project.xsd`, `MetaData.xsd` — raw: raw.githubusercontent.com/bitwig/dawproject/main/Project.xsd — exact elements, attributes, enums (`Unit`, `TimeUnit`, `MixerRole=regular|master|effect|submix|vca`, `DeviceRole=instrument|noteFX|audioFX|analyzer`, `SendType=pre|post`, `Interpolation=hold|linear`).
+- `DoubleAdapter.java`, `Note.java` (same repo) — confirm `vel`/`rel` are **normalized 0..1** and `inf` is a literal double token.
+- Real Bitwig 5.0 example `project.xml` embedded in the repo README — used verbatim in `tests/test_real_dawproject.py`.
+
+**Tier 1 — official Steinberg (Cubase-writer behavior):**
+- Cubase 15 DAWproject export doc — steinberg.help/r/cubase-pro/15.0/.../exporting_dawproject_files_t.html (scope: "video, audio, and MIDI data").
+- Staff (Martin Jirsak): MIDI CC/Note Expression/channel strip/crossfade **not supported** — forums.steinberg.net/t/…/1023436; greyed-out export probe — /t/…/1030398.
+- Track Archive export/import docs — steinberg.help Cubase Pro 14/15.
+
+**Tier 3 — independent testing (community):**
+- Sound on Sound (Cubase↔Cubasis) and polarity.me (Cubase↔Bitwig): sends/fader/pan/routing carried; **automation & plug-in content unreliable**; round-trips lossy. Treated as community evidence, not spec.
+
+> Bitwig marketing ("preserves … automation … third-party plug-in state") describes the **format's** ceiling, NOT Cubase's behavior — not cited as Cubase capability.
+
 ## Legal constraints observed
 
 - No Steinberg proprietary code (incl. the VST3 SDK) is redistributed in this repo.

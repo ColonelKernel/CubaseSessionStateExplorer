@@ -12,8 +12,9 @@ def test_dualfilter_parameter_change_detected(fixtures_dir):
     cats = result.summary()
     assert cats.get("PARAMETER", 0) >= 1
     change = next(c for c in result.changes if c.category == "PARAMETER")
-    assert change.before == [0.25]
-    assert change.after == [0.75]
+    assert "DualFilter/Position" in change.target
+    assert change.before == 0.25
+    assert change.after == 0.75
 
 
 def test_routing_change_detected(fixtures_dir):

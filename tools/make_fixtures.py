@@ -74,25 +74,43 @@ def add_track(structure, name, ch_id, destination, content="audio",
               contentType=content, loaded="true", color=color)
     ch = _sub(tr, "Channel", id=ch_id, destination=destination,
               audioChannels="2", role=role)
-    _real(ch, "Volume", volume, unit="linear")
-    _real(ch, "Pan", pan, unit="normalized")
-    _sub(ch, "Mute", value="false")
+    _real(ch, "Volume", volume, unit="linear", pid=f"{ch_id}-vol")
+    _real(ch, "Pan", pan, unit="normalized", pid=f"{ch_id}-pan")
+    _sub(ch, "Mute", value="false", id=f"{ch_id}-mute")
     if devices:
         devs = _sub(ch, "Devices")
         for i, d in enumerate(devices):
-            el = _sub(devs, d.get("element", "Vst3Plugin"),
-                      deviceName=d["name"], deviceID=d.get("id", d["name"]),
-                      deviceRole=d.get("role", "audioFX"),
-                      id=f"dev-{ch_id}-{i}", name=d["name"])
-            _sub(el, "Enabled", value="true" if d.get("enabled", True) else "false")
-            _sub(el, "State", path=f"plugins/{d['name']}-{ch_id}.vstpreset")
+            _emit_device(devs, d, ch_id, i)
     if sends:
         sends_el = _sub(ch, "Sends")
-        for s in sends:
+        for j, s in enumerate(sends):
             se = _sub(sends_el, "Send", destination=s["destination"],
-                      type=s.get("type", "post"))
-            _real(se, "Volume", s.get("level", 0.3), unit="linear")
+                      type=s.get("type", "post"), id=f"send-{ch_id}-{j}",
+                      name=s.get("name"))
+            _sub(se, "Enable", value="true", id=f"send-{ch_id}-{j}-en")
+            _real(se, "Volume", s.get("level", 0.3), unit="linear",
+                  pid=f"send-{ch_id}-{j}-vol")
     return f"tr-{ch_id}", ch_id
+
+
+def _emit_device(devs, d, ch_id, i):
+    """Emit one device. ``element`` picks Vst3Plugin/Equalizer/etc.; ``params``
+    (name->value) emits enumerable <Parameters> (readable); otherwise a <State>
+    blob is written (opaque, like a real Cubase VST3)."""
+    el = _sub(devs, d.get("element", "Vst3Plugin"),
+              deviceName=d["name"], deviceID=d.get("id", d["name"]),
+              deviceRole=d.get("role", "audioFX"),
+              id=f"dev-{ch_id}-{i}", name=d["name"])
+    _sub(el, "Enabled", value="true" if d.get("enabled", True) else "false",
+         id=f"dev-{ch_id}-{i}-en")
+    params = d.get("params")
+    if params:
+        pel = _sub(el, "Parameters")
+        for pname, pval in params.items():
+            _sub(pel, "RealParameter", name=pname, unit="normalized",
+                 value=f"{pval:.6f}", id=f"dev-{ch_id}-{i}-{pname}".replace(" ", ""))
+    else:
+        _sub(el, "State", path=f"plugins/{d['name']}-{ch_id}.vstpreset")
 
 
 def add_clip(lanes, track_ref, time, duration, name, notes=None, audio=None):
@@ -111,12 +129,13 @@ def add_clip(lanes, track_ref, time, duration, name, notes=None, audio=None):
     return tl
 
 
-def add_automation(lanes, track_ref, target, points):
-    tl = _sub(lanes, "Lanes", track=track_ref, id=f"autolane-{track_ref}-{target}")
-    pts = _sub(tl, "Points", target=target, unit="normalized",
-               id=f"pts-{track_ref}-{target}")
+def add_automation(lanes, track_ref, target_param_id, points, unit="linear"):
+    tl = _sub(lanes, "Lanes", track=track_ref, id=f"autolane-{track_ref}")
+    pts = _sub(tl, "Points", unit=unit, timeUnit="beats",
+               id=f"pts-{track_ref}-{target_param_id}")
+    _sub(pts, "Target", parameter=target_param_id)   # IDREF to a Parameter's id
     for (t, v) in points:
-        _sub(pts, "RealPoint", time=t, value=v, interpolation="linear")
+        _sub(pts, "RealPoint", time=t, value=f"{v:.6f}", interpolation="linear")
     return tl
 
 
@@ -239,37 +258,45 @@ def write_midi(path, notes, division=480, name="Synth Pad"):
 def make_demo_session(path):
     root, structure, arr, lanes = build_project()
     master = add_master(structure)
-    add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effectTrack",
+    # FX channel: real DAWproject mixerRole is 'effect' (not 'effectTrack').
+    add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effect",
               devices=[{"name": "REVerence", "role": "audioFX"}])
-    grp, grp_ch = add_track(structure, "Drum Bus", "ch-grp", master, role=None,
-                            volume=0.8)
+    # Group bus: role 'submix'. Children route into it.
+    add_track(structure, "Drum Bus", "ch-grp", master, role="submix", volume=0.8)
+    # Built-in EQ emitted as <Equalizer> with enumerable Parameters (readable).
     add_track(structure, "Kick", "ch-kick", "ch-grp", color="#C44536",
-              devices=[{"name": "Frequency"}, {"name": "Compressor"}])
+              devices=[{"name": "Frequency", "element": "Equalizer",
+                        "params": {"Low Gain": 0.6}},
+                       {"name": "Compressor", "element": "Compressor",
+                        "params": {"Threshold": 0.4}}])
     add_track(structure, "Snare", "ch-snare", "ch-grp",
-              devices=[{"name": "Frequency"}])
+              devices=[{"name": "Frequency", "element": "Equalizer"}])
+    # Vox: a VST3 with an opaque <State> blob (params unavailable, honestly).
     tr_vox, _ = add_track(
         structure, "Lead Vox", "ch-vox", master, color="#D4A017", volume=0.9,
         devices=[{"name": "StudioEQ"}, {"name": "DeEsser"}, {"name": "Tube Compressor"}],
-        sends=[{"destination": "ch-fx1", "level": 0.25}])
+        sends=[{"destination": "ch-fx1", "level": 0.25, "name": "FX 1"}])
     tr_pad, _ = add_track(structure, "Synth Pad", "ch-pad", master, content="notes",
                           devices=[{"name": "Retrologue", "role": "instrument",
                                     "element": "Vst3Plugin"}])
     add_clip(lanes, "ch-vox", 0.0, 16.0, "Lead Vox Comp", audio="audio/vox.wav")
     add_clip(lanes, "ch-pad", 0.0, 16.0, "Pad Part",
              notes=[(0, 4, 60, 0.7), (4, 4, 64, 0.7), (8, 4, 67, 0.7), (12, 4, 72, 0.7)])
-    add_automation(lanes, "ch-vox", "Volume", [(0.0, 0.6), (8.0, 0.8), (16.0, 0.7)])
+    # Automation lane targets the vox channel Volume parameter by IDREF.
+    add_automation(lanes, "ch-vox", "ch-vox-vol",
+                   [(0.0, 0.6), (8.0, 0.8), (16.0, 0.7)])
     write_dawproject(root, path)
 
 
 def make_dualfilter(path, position):
     root, structure, arr, lanes = build_project()
     master = add_master(structure)
+    # DualFilter Position exposed as a readable device RealParameter (normalized).
+    norm = round((position + 1.0) / 2.0, 4)  # -1..1 -> 0..1
     add_track(structure, "Gtr Wide", "ch-gtr", master, color="#2E86AB",
-              devices=[{"name": "DualFilter"}])
+              devices=[{"name": "DualFilter", "role": "audioFX",
+                        "params": {"Position": norm}}])
     add_clip(lanes, "ch-gtr", 0.0, 8.0, "Gtr L+R", audio="audio/gtr.wav")
-    # Position exposed as a 1-point automation lane on the DualFilter param.
-    norm = (position + 1.0) / 2.0  # -1..1 -> 0..1
-    add_automation(lanes, "ch-gtr", "DualFilter/Position", [(0.0, round(norm, 4))])
     write_dawproject(root, path)
 
 
@@ -277,9 +304,9 @@ def make_routing(path, with_send):
     root, structure, arr, lanes = build_project()
     master = add_master(structure)
     if with_send:
-        add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effectTrack",
+        add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effect",
                   devices=[{"name": "REVerence"}])
-    sends = [{"destination": "ch-fx1", "level": 0.4}] if with_send else None
+    sends = [{"destination": "ch-fx1", "level": 0.4, "name": "FX 1"}] if with_send else None
     add_track(structure, "Lead Vox", "ch-vox", master, color="#D4A017",
               devices=[{"name": "StudioEQ"}], sends=sends)
     add_clip(lanes, "ch-vox", 0.0, 8.0, "Lead Vox", audio="audio/vox.wav")
@@ -315,9 +342,9 @@ def main(argv):
                 "expected": {"tracks_min": 5, "has_group": True, "has_fx_channel": True,
                              "has_instrument": True, "has_automation": True, "tempo": 120.0}},
             "dualfilter_a.dawproject": {"expected": {
-                "field": "automation[DualFilter/Position].points[0].value", "value": 0.25}},
+                "field": "track[Gtr Wide].insert[DualFilter].param[Position]", "value": 0.25}},
             "dualfilter_b.dawproject": {"expected": {
-                "field": "automation[DualFilter/Position].points[0].value", "value": 0.75}},
+                "field": "track[Gtr Wide].insert[DualFilter].param[Position]", "value": 0.75}},
             "routing_a.dawproject": {"expected": {"sends": 0}},
             "routing_b.dawproject": {"expected": {"sends": 1, "new_node": "FX 1 - Plate"}},
         },

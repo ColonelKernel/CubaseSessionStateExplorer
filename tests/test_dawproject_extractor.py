@@ -64,13 +64,21 @@ def test_automation_lane(fixtures_dir):
     assert s.automation[0].point_count == 3
 
 
-def test_plugin_parameters_are_explicitly_unavailable(fixtures_dir):
+def test_builtin_params_readable_vst3_params_unavailable(fixtures_dir):
     s = _session(fixtures_dir, "demo_session.dawproject")
-    # No fabricated parameter values...
-    assert all(len(d.parameters) == 0 for d in s.all_devices())
-    # ...and the gap is a first-class object, not silence.
-    gaps = {u.state_gap for u in s.unknown_state}
-    assert "plugin_parameters" in gaps
+    # Built-in devices (Equalizer/Compressor) expose REAL parameter values...
+    kick = next(t for t in s.all_tracks() if t.name == "Kick")
+    eq = next(d for d in kick.devices if d.name == "Frequency")
+    assert eq.device_family == "EQ"
+    assert any(p.name == "Low Gain" and p.value == 0.6 for p in eq.parameters)
+    assert eq.parameters[0].provenance.status == "exported"  # observed, not guessed
+    # ...while an opaque VST3 (State blob, no enumerable params) is NOT fabricated
+    # and is explicitly flagged unavailable.
+    vox = next(t for t in s.all_tracks() if t.name == "Lead Vox")
+    opaque = next(d for d in vox.devices if d.name == "StudioEQ")
+    assert opaque.parameters == []
+    assert opaque.field_provenance["parameters"].status == "unavailable"
+    # The gap is a first-class object, not silence.
     assert any(u.state_gap == "insert_parameter_state" for u in s.unknown_state)
 
 

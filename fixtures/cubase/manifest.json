@@ -14,13 +14,13 @@
     },
     "dualfilter_a.dawproject": {
       "expected": {
-        "field": "automation[DualFilter/Position].points[0].value",
+        "field": "track[Gtr Wide].insert[DualFilter].param[Position]",
         "value": 0.25
       }
     },
     "dualfilter_b.dawproject": {
       "expected": {
-        "field": "automation[DualFilter/Position].points[0].value",
+        "field": "track[Gtr Wide].insert[DualFilter].param[Position]",
         "value": 0.75
       }
     },
