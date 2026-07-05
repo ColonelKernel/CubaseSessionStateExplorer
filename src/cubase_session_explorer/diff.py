@@ -161,6 +161,17 @@ def _diff_one_track(ta: TrackState, tb: TrackState, r: DiffResult) -> None:
                 r.changes.append(Change(
                     "PARAMETER", "changed",
                     f"track:{name}/insert:{db.index}/{db.name}/{pname}", va, vb))
+        # opaque plug-in state change: blob fingerprint differs but the specific
+        # parameter is NOT recoverable — reported honestly as UNKNOWN.
+        sa = da.native.get("cubase", {}).get("state_blob_sha")
+        sb = db.native.get("cubase", {}).get("state_blob_sha")
+        if sa and sb and sa != sb:
+            r.changes.append(Change(
+                "UNKNOWN", "changed",
+                f"track:{name}/insert:{db.index}/{db.name}/state (opaque)",
+                before=sa, after=sb,
+                detail="opaque plug-in state changed; specific parameter values "
+                       "not recoverable from this surface"))
 
     # clip timing (temporal)
     a_clip = {c.name: c for c in ta.clips}

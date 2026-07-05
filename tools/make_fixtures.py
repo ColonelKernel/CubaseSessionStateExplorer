@@ -139,12 +139,14 @@ def add_automation(lanes, track_ref, target_param_id, points, unit="linear"):
     return tl
 
 
-def write_dawproject(root, path):
+def write_dawproject(root, path, extra_files=None):
     xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     meta = b'<?xml version="1.0" encoding="UTF-8"?>\n<MetaData/>\n'
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("project.xml", xml_bytes)
         zf.writestr("metadata.xml", meta)
+        for name, data in (extra_files or {}).items():
+            zf.writestr(name, data)
 
 
 # --------------------------------------------------------------------------
@@ -300,6 +302,49 @@ def make_dualfilter(path, position):
     write_dawproject(root, path)
 
 
+def make_folder_group(path):
+    """P09: a folder track whose group channel is enabled, with children routed
+    into it (folder-vs-group distinction, nested <Track>, standalone-ish bus)."""
+    root, structure, arr, lanes = build_project()
+    master = add_master(structure)
+    # Folder track WITH a group channel (contentType 'tracks', has <Channel>).
+    folder_tr = _sub(structure, "Track", id="tr-folder", name="Drums (Folder)",
+                     contentType="tracks", loaded="true", color="#C44536")
+    fch = _sub(folder_tr, "Channel", id="ch-folder", destination=master,
+               role="submix", audioChannels="2")
+    _real(fch, "Volume", 0.8, unit="linear", pid="ch-folder-vol")
+    _real(fch, "Pan", 0.5, unit="normalized")
+    _sub(fch, "Mute", value="false")
+    # Children nested INSIDE the folder track, routed to the folder's group channel.
+    add_track(folder_tr, "Kick", "ch-kick", "ch-folder",
+              devices=[{"name": "Frequency", "element": "Equalizer"}])
+    add_track(folder_tr, "Snare", "ch-snare", "ch-folder")
+    add_clip(lanes, "ch-kick", 0.0, 8.0, "Kick", audio="audio/kick.wav")
+    write_dawproject(root, path)
+
+
+def make_opaque(path, position):
+    """Opaque VST3: DualFilter as a Vst3Plugin with a <State> blob whose BYTES
+    encode the setting. Values are not readable, but the blob hash makes a
+    controlled change detectable (the honest Cubase-VST3 case)."""
+    root, structure, arr, lanes = build_project()
+    master = add_master(structure)
+    tr = _sub(structure, "Track", id="tr-gtr", name="Gtr Wide",
+              contentType="audio", loaded="true", color="#2E86AB")
+    ch = _sub(tr, "Channel", id="ch-gtr", destination=master, audioChannels="2")
+    _real(ch, "Volume", 0.85, unit="linear", pid="ch-gtr-vol")
+    _real(ch, "Pan", 0.5, unit="normalized")
+    devs = _sub(ch, "Devices")
+    el = _sub(devs, "Vst3Plugin", deviceName="DualFilter", deviceID="DualFilter",
+              deviceRole="audioFX", id="dev-gtr-0", name="DualFilter")
+    _sub(el, "Enabled", value="true", id="dev-gtr-0-en")
+    _sub(el, "State", path="plugins/dualfilter.vstpreset")  # opaque blob
+    add_clip(lanes, "ch-gtr", 0.0, 8.0, "Gtr L+R", audio="audio/gtr.wav")
+    # The blob bytes differ by position -> different hash -> detectable change.
+    blob = b"VST3PRESET\x00DualFilter\x00Position=" + f"{position:+.3f}".encode()
+    write_dawproject(root, path, extra_files={"plugins/dualfilter.vstpreset": blob})
+
+
 def make_routing(path, with_send):
     root, structure, arr, lanes = build_project()
     master = add_master(structure)
@@ -330,6 +375,11 @@ def main(argv):
     render_routing(os.path.join(out, "routing_a.wav"), with_reverb=False)
     render_routing(os.path.join(out, "routing_b.wav"), with_reverb=True)
 
+    make_folder_group(os.path.join(out, "folder_group.dawproject"))
+
+    make_opaque(os.path.join(out, "opaque_a.dawproject"), -0.5)
+    make_opaque(os.path.join(out, "opaque_b.dawproject"), +0.5)
+
     write_midi(os.path.join(out, "notes.mid"),
                [(0, 1, 60, 100), (1, 1, 64, 96), (2, 1, 67, 92), (3, 1, 72, 88)])
 
@@ -347,6 +397,14 @@ def main(argv):
                 "field": "track[Gtr Wide].insert[DualFilter].param[Position]", "value": 0.75}},
             "routing_a.dawproject": {"expected": {"sends": 0}},
             "routing_b.dawproject": {"expected": {"sends": 1, "new_node": "FX 1 - Plate"}},
+            "folder_group.dawproject": {"expected": {
+                "folders": 1, "folder_group_channel_enabled": True,
+                "children": ["Kick", "Snare"]}},
+            "opaque_a.dawproject": {"expected": {
+                "field": "DualFilter opaque <State> blob (Position=-0.500)",
+                "note": "value not readable; blob hash differs from opaque_b"}},
+            "opaque_b.dawproject": {"expected": {
+                "field": "DualFilter opaque <State> blob (Position=+0.500)"}},
         },
         "renders": ["dualfilter_a.wav", "dualfilter_b.wav", "routing_a.wav", "routing_b.wav"],
     }

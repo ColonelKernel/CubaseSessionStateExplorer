@@ -37,6 +37,21 @@ def test_audio_delta_measurable(fixtures_dir):
     assert any(abs(v["delta"]) > 1e-4 for v in delta.values())
 
 
+def test_opaque_vst3_state_change_detected_honestly(fixtures_dir):
+    a = ingest(os.path.join(fixtures_dir, "opaque_a.dawproject")).session
+    b = ingest(os.path.join(fixtures_dir, "opaque_b.dawproject")).session
+    # the plug-in parameter value is NOT readable / not fabricated
+    dev = next(iter(a.all_devices()))
+    assert dev.parameters == []
+    assert dev.field_provenance["parameters"].status == "unavailable"
+    # ...but the controlled change IS detectable, honestly, as UNKNOWN
+    result = diff_sessions(a, b)
+    assert result.summary().get("UNKNOWN", 0) >= 1
+    change = next(c for c in result.changes if c.category == "UNKNOWN")
+    assert "opaque" in change.target.lower() or "opaque" in change.detail.lower()
+    assert change.before != change.after  # blob fingerprints differ
+
+
 def test_identical_sessions_no_changes(fixtures_dir):
     a = ingest(os.path.join(fixtures_dir, "routing_a.dawproject")).session
     b = ingest(os.path.join(fixtures_dir, "routing_a.dawproject")).session

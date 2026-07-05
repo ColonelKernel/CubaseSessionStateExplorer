@@ -224,9 +224,31 @@ def extract(path: str) -> DawprojectResult:
                 )
             )
 
+    # --- Hash opaque plug-in state blobs -----------------------------------
+    # We cannot read the parameter VALUES inside a VST3 <State> blob, but we CAN
+    # fingerprint the blob bytes. That makes a controlled plug-in change
+    # *detectable* (the hash differs) while staying honest that the specific
+    # parameter is not recoverable — exactly the Cubase-VST3 reality.
+    _hash_state_blobs(path, session)
+
     result.session = session
     result.ok = True
     return result
+
+
+def _hash_state_blobs(path: str, session: SessionState) -> None:
+    from ..utils import sha256_bytes
+
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+            for dev in session.all_devices():
+                ref = dev.state_blob_ref
+                if ref and ref in names:
+                    dev.native.setdefault("cubase", {})["state_blob_sha"] = \
+                        sha256_bytes(zf.read(ref))[:16]
+    except (zipfile.BadZipFile, OSError):
+        pass  # raw-XML input or unreadable zip: no blob to fingerprint
 
 
 def _walk_tracks(

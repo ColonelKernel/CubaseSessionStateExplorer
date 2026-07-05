@@ -93,3 +93,19 @@ def test_provenance_is_attached(fixtures_dir):
     vox = next(t for t in s.tracks if t.name == "Lead Vox")
     assert vox.provenance.status == "exported"
     assert vox.provenance.source.type == "dawproject"
+
+
+def test_folder_with_group_channel_is_distinct(fixtures_dir):
+    s = _session(fixtures_dir, "folder_group.dawproject")
+    # the folder-vs-group distinction is preserved, not flattened
+    assert len(s.folders) == 1
+    folder = s.folders[0]
+    assert folder.group_channel_enabled is True
+    assert folder.organizational_only is False
+    assert len(folder.child_track_ids) == 2
+    # the folder is itself a summing group bus...
+    assert any(t.track_type == "group" for t in s.groups)
+    # ...and its children are nested (parent_id set) AND route into it
+    kick = next(t for t in s.all_tracks() if t.name == "Kick")
+    assert kick.parent_id is not None
+    assert any(r.source_track_id == kick.id for r in s.routes)
