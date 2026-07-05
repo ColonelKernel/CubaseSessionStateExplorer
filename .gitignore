@@ -4,4 +4,18 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+build/
+dist/
+.mypy_cache/
+
+# Generated artifacts (regenerate with tools/make_fixtures.py / the CLI)
+fixtures/cubase/*.wav
+data/snapshots/*.json
+data/observations/*.json
+data/observations/*.jsonl
+runtime/snapshot.json
+
+# pyvis writes vendored assets next to saved graphs
+lib/
+
 .DS_Store
