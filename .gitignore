@@ -19,3 +19,6 @@ runtime/snapshot.json
 lib/
 
 .DS_Store
+
+# Canonical export bundles (regenerate with: cubase-explorer export-canonical)
+exports/

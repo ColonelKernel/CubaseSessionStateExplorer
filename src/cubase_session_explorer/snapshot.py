@@ -1,4 +1,13 @@
-"""Snapshot persistence: canonical SessionState <-> JSON on disk.
+"""Snapshot persistence: native SessionState <-> JSON on disk.
+
+.. deprecated:: 0.2
+   The 0.1.0 snapshot written here is a repo-local format, DEPRECATED as an
+   interchange format. The analyzer-facing wire format is the v0.2 canonical
+   five-file bundle produced by :mod:`cubase_session_explorer.canonical_export`
+   (CLI: ``cubase-explorer export-canonical <input> --out <dir>``). This module
+   is kept because the internal diff/experiment workflow still round-trips
+   native SessionState files through it; do not ship these snapshots to the
+   Session State Analyzer.
 
 A snapshot is the full validated SessionState plus its graph, saved so two
 snapshots (before/after a Cubase edit) can be diffed later. Stable, source-

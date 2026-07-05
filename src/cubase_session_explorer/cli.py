@@ -1,14 +1,22 @@
 """cubase-explorer CLI.
 
 Commands:
+  export-canonical PATH --out DIR
+                                export the v0.2 canonical 5-file bundle
+                                (the analyzer-facing wire format)
   ingest   PATH                 discover + fuse a bundle/file -> snapshot + report
   report   PATH                 print the extraction report only
   graph    PATH  [--out g.json] build and dump the typed graph
-  snapshot PATH  --out s.json   save a canonical snapshot
+  snapshot PATH  --out s.json   [DEPRECATED] save a legacy 0.1.0 snapshot
   compare  A.json B.json        diff two snapshots (classified changes)
   experiment A.dawproject B.dawproject [--render-a w.wav --render-b w.wav]
                                 run one controlled state<->audio experiment
+  diagnose PATH [--out d.json]  grounding report for a real .dawproject
   demo     [--dir fixtures/cubase]   run the built-in end-to-end demo
+
+The legacy repo-local ``snapshot`` format (schema 0.1.0, ``snapshot.py``) is
+DEPRECATED as an interchange format in favor of ``export-canonical``; it is
+kept for the internal diff/experiment workflow only.
 """
 
 from __future__ import annotations
@@ -67,10 +75,41 @@ def cmd_graph(args) -> int:
 
 
 def cmd_snapshot(args) -> int:
+    print(
+        "[deprecated] `snapshot` writes the legacy repo-local 0.1.0 format; "
+        "use `export-canonical` for the analyzer-facing v0.2 bundle.",
+        file=sys.stderr,
+    )
     session = _ingest(args.path)
     save_snapshot(session, args.out)
     print(f"Snapshot saved: {args.out}")
     return 0
+
+
+def cmd_export_canonical(args) -> int:
+    from .canonical_export.exporter import ExportError, export_bundle
+
+    try:
+        result = export_bundle(args.path, args.out, sanitize=not args.no_sanitize)
+    except ExportError as exc:
+        print(f"export-canonical failed: {exc}", file=sys.stderr)
+        return 1
+    report = result.validation
+    snap = result.snapshot
+    by_type: dict[str, int] = {}
+    for entity in snap.entities:
+        by_type[entity.entity_type] = by_type.get(entity.entity_type, 0) + 1
+    print(f"Canonical bundle written: {result.out_dir}")
+    for name in sorted(result.files):
+        print(f"  {name}")
+    print(f"snapshot_id: {snap.snapshot_id}")
+    print(f"entities: {len(snap.entities)} {by_type}")
+    print(f"relationships: {len(snap.relationships)}  "
+          f"provenance records: {len(snap.provenance)}  "
+          f"failures: {len(snap.failures)}")
+    print(f"validation: valid={report.valid} "
+          f"errors={len(report.errors)} warnings={len(report.warnings)}")
+    return 0 if report.valid else 1
 
 
 def cmd_compare(args) -> int:
@@ -168,6 +207,50 @@ def _infer_intervention(result) -> StateIntervention:
     )
 
 
+def cmd_diagnose(args) -> int:
+    """Grounding harness for real Cubase exports: what parsed, what didn't."""
+    from .extractors.dawproject import element_census
+
+    print("=" * 64)
+    print("DAWPROJECT GROUNDING DIAGNOSTIC")
+    print("=" * 64)
+    census = element_census(args.path)
+    if census.get("warnings"):
+        for w in census["warnings"]:
+            print(f"  ! {w}")
+    print(f"\nContainer members: {len(census.get('members', []))}")
+    print(f"Distinct elements: {len(census.get('element_counts', {}))}")
+
+    unhandled = census.get("unhandled_elements", {})
+    if unhandled:
+        print("\n⚠ UNHANDLED elements (parser hardening targets):")
+        for name, count in sorted(unhandled.items(), key=lambda kv: -kv[1]):
+            attrs = census["attributes_by_element"].get(name, [])
+            print(f"    {name} ×{count}   attrs={attrs}")
+    else:
+        print("\n✓ Every element localname is handled by the parser.")
+
+    if census.get("channel_roles"):
+        print(f"\nChannel roles seen:  {census['channel_roles']}")
+    if census.get("device_elements"):
+        print(f"Device elements:     {census['device_elements']}")
+    if census.get("unit_values"):
+        print(f"Unit values seen:    {census['unit_values']}")
+
+    # Now the actual extraction result.
+    print("\n" + "-" * 64)
+    session = _ingest(args.path)
+    print(extraction_report(session))
+
+    if args.out:
+        import json
+        with open(args.out, "w") as fh:
+            json.dump({"census": census,
+                       "session": session.model_dump(mode="json")}, fh, indent=2)
+        print(f"\nFull diagnostic written: {args.out}")
+    return 0
+
+
 def cmd_demo(args) -> int:
     d = args.dir
     df_a = os.path.join(d, "dualfilter_a.dawproject")
@@ -197,18 +280,35 @@ def build_parser() -> argparse.ArgumentParser:
                                 description="Cubase Session State Explorer")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    s = sub.add_parser(
+        "export-canonical",
+        help="Export the v0.2 canonical 5-file bundle for the analyzer",
+    )
+    s.add_argument("path")
+    s.add_argument("--out", required=True, help="Output bundle directory")
+    s.add_argument("--no-sanitize", action="store_true",
+                   help="Keep local filesystem paths in the bundle")
+    s.set_defaults(func=cmd_export_canonical)
+
     s = sub.add_parser("ingest"); s.add_argument("path"); s.add_argument("--out")
     s.set_defaults(func=cmd_ingest)
     s = sub.add_parser("report"); s.add_argument("path"); s.set_defaults(func=cmd_report)
     s = sub.add_parser("graph"); s.add_argument("path"); s.add_argument("--out")
     s.set_defaults(func=cmd_graph)
-    s = sub.add_parser("snapshot"); s.add_argument("path"); s.add_argument("--out", required=True)
+    s = sub.add_parser(
+        "snapshot",
+        help="[DEPRECATED] legacy 0.1.0 snapshot; use export-canonical",
+    )
+    s.add_argument("path"); s.add_argument("--out", required=True)
     s.set_defaults(func=cmd_snapshot)
     s = sub.add_parser("compare"); s.add_argument("a"); s.add_argument("b")
     s.set_defaults(func=cmd_compare)
     s = sub.add_parser("experiment"); s.add_argument("a"); s.add_argument("b")
     s.add_argument("--render-a", dest="render_a"); s.add_argument("--render-b", dest="render_b")
     s.add_argument("--out"); s.set_defaults(func=cmd_experiment)
+    s = sub.add_parser("diagnose", help="Grounding report for a real .dawproject")
+    s.add_argument("path"); s.add_argument("--out")
+    s.set_defaults(func=cmd_diagnose)
     s = sub.add_parser("demo"); s.add_argument("--dir", default="fixtures/cubase")
     s.set_defaults(func=cmd_demo)
     return p
