@@ -96,6 +96,25 @@ def test_performed_vs_notated_enharmonic_divergence(fixtures_dir, tmp_path):
     assert reinterp[0]["acoustically_inert"] is True
 
 
+def test_musicxml_octave_zero_is_not_defaulted(tmp_path):
+    # Regression: octave 0 is legal (C0 = MIDI 12); a `... or 4` fallback would
+    # corrupt it to C4/60. Also covers alter=0 staying 0.
+    xml = ('<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+           '<score-part id="P1"><part-name>Bass</part-name></score-part></part-list>'
+           '<part id="P1"><measure number="1"><attributes><divisions>4</divisions>'
+           '</attributes>'
+           '<note><pitch><step>C</step><octave>0</octave></pitch><duration>4</duration></note>'
+           '<note><pitch><step>A</step><octave>0</octave></pitch><duration>4</duration></note>'
+           '</measure></part></score-partwise>')
+    p = tmp_path / "low.musicxml"
+    p.write_text(xml)
+    r = musicxml.extract(str(p))
+    assert r.ok
+    c0, a0 = r.score.pitched_notes
+    assert (c0.spelled, c0.midi_key) == ("C0", 12)
+    assert (a0.spelled, a0.midi_key) == ("A0", 21)
+
+
 def test_musicxml_graceful_on_garbage(tmp_path):
     p = tmp_path / "bad.musicxml"
     p.write_text("<oops>")

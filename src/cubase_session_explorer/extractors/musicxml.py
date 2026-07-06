@@ -135,10 +135,13 @@ def extract(path: str) -> MusicXmlResult:
                 step = _text(pitch, "step")
                 if step is None:
                     continue
+                # NB: octave 0 is legal (C0 = MIDI 12), so `or 4` would corrupt
+                # it — substitute the default only when the element is absent.
+                oct_val = _int_or_none(_text(pitch, "octave"))
                 score.pitched_notes.append(ScoreNote(
                     step=step,
-                    alter=_int_or_none(_text(pitch, "alter")) or 0,
-                    octave=_int_or_none(_text(pitch, "octave")) or 4,
+                    alter=_int_or_none(_text(pitch, "alter")) or 0,  # 0 is the wanted default
+                    octave=4 if oct_val is None else oct_val,
                     duration_divisions=_int_or_none(_text(note_el, "duration")),
                     voice=_int_or_none(_text(note_el, "voice")),
                     measure=mnum, part_id=pid,
