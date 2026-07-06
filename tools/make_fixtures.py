@@ -222,6 +222,82 @@ def render_routing(path, with_reverb, sr=44100, dur=2.0):
 
 
 # --------------------------------------------------------------------------
+# VST3 preset (.vstpreset) — spec-exact per the official SDK format:
+# 'VST3' + int32 version + 32-byte ASCII class id + int64 chunk-list offset;
+# data area; 'List' + int32 count + entries of (id, int64 offset, int64 size).
+# --------------------------------------------------------------------------
+
+def write_vstpreset(path, class_id, plugin_name, preset_name, comp_payload):
+    assert len(class_id) == 32
+    info_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<MetaInfo>\n"
+        f'  <Attribute id="PlugInName" value="{plugin_name}" type="string"/>\n'
+        f'  <Attribute id="PlugInCategory" value="Fx|Filter" type="string"/>\n'
+        f'  <Attribute id="Name" value="{preset_name}" type="string"/>\n'
+        "</MetaInfo>\n"
+    ).encode()
+    header_size = 4 + 4 + 32 + 8
+    comp_off = header_size
+    info_off = comp_off + len(comp_payload)
+    list_off = info_off + len(info_xml)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<4si32sq", b"VST3", 1, class_id.encode(), list_off))
+        f.write(comp_payload)
+        f.write(info_xml)
+        f.write(b"List" + struct.pack("<i", 2))
+        f.write(struct.pack("<4sqq", b"Comp", comp_off, len(comp_payload)))
+        f.write(struct.pack("<4sqq", b"Info", info_off, len(info_xml)))
+
+
+DUALFILTER_CLASS_ID = "5C3D6E8F9A0B1C2D3E4F5A6B7C8D9E0F"  # fixture FUID
+
+
+# --------------------------------------------------------------------------
+# MusicXML — a notated interpretation of a performed MIDI passage.
+# The score spells MIDI key 63 as Eb4 (flat-side, key of Eb major) where a
+# piano-roll default would say D#4: a purely REPRESENTATIONAL divergence.
+# --------------------------------------------------------------------------
+
+def write_musicxml(path):
+    notes = [("C", 0, 4), ("E", -1, 4), ("F", 0, 4), ("G", 0, 4), ("C", 0, 5)]
+    body = []
+    for step, alter, octave in notes:
+        alter_el = f"<alter>{alter}</alter>" if alter else ""
+        body.append(
+            "      <note><pitch>"
+            f"<step>{step}</step>{alter_el}<octave>{octave}</octave>"
+            "</pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>"
+        )
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Lead</part-name>
+      <score-instrument id="P1-I1"><instrument-name>Synth Lead</instrument-name></score-instrument>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>-3</fifths><mode>major</mode></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+{chr(10).join(body[:4])}
+    </measure>
+    <measure number="2">
+{body[4]}
+    </measure>
+  </part>
+</score-partwise>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(xml)
+
+
+# --------------------------------------------------------------------------
 # MIDI file (format 1, one track)
 # --------------------------------------------------------------------------
 
@@ -379,6 +455,20 @@ def main(argv):
 
     make_opaque(os.path.join(out, "opaque_a.dawproject"), -0.5)
     make_opaque(os.path.join(out, "opaque_b.dawproject"), +0.5)
+
+    # VST3 preset pair: same plug-in (class id), one controlled state change.
+    write_vstpreset(os.path.join(out, "dualfilter_a.vstpreset"),
+                    DUALFILTER_CLASS_ID, "DualFilter", "Dark",
+                    b"DFSTATE\x00Position=-0.500\x00Resonance=0.300")
+    write_vstpreset(os.path.join(out, "dualfilter_b.vstpreset"),
+                    DUALFILTER_CLASS_ID, "DualFilter", "Bright",
+                    b"DFSTATE\x00Position=+0.500\x00Resonance=0.300")
+
+    # Performed MIDI + its notated interpretation (Eb spelling of key 63).
+    write_midi(os.path.join(out, "score_perf.mid"),
+               [(0, 1, 60, 100), (1, 1, 63, 96), (2, 1, 65, 92),
+                (3, 1, 67, 88), (4, 1, 72, 84)], name="Lead")
+    write_musicxml(os.path.join(out, "score.musicxml"))
 
     write_midi(os.path.join(out, "notes.mid"),
                [(0, 1, 60, 100), (1, 1, 64, 96), (2, 1, 67, 92), (3, 1, 72, 88)])

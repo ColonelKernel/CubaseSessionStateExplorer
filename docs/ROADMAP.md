@@ -10,9 +10,12 @@ graph, snapshot/diff, state→audio experiments, UI, and docs.
    Cubase 15 as `.dawproject` + Track Archive + `.cpr` + render; re-run the
    expected-vs-observed suite against real artifacts; feed `cpr-lab diff` real
    controlled pairs (validates CPR-004).
-2. **Preset lab** (`tools/preset_lab`). Parse `.vstpreset` / track presets / FX
-   chain presets — a genuine surface for insert identity/order and *some*
-   parameter state (the strongest lever against the plug-in-parameter wall).
+2. ~~**Preset lab.**~~ **Done (v0):** `extractors/vstpreset.py` + `preset-lab`
+   CLI parse `.vstpreset` files per the official SDK format (header, class id,
+   chunk list, MediaBay Info attributes) and fingerprint the opaque Comp/Cont
+   state; fusion enriches matching devices with `preset_name` + fingerprints.
+   Remaining: Cubase *track* presets / FX-chain presets (separate container
+   formats), and grounding against Cubase-exported presets.
 3. **DAWproject exporter variability hardening.** Test against Bitwig/Studio One
    exports too; expand element-name coverage; property-based fuzzing.
 4. **Richer MIDI** — CC / pitch-bend / aftertouch / program change into
@@ -23,8 +26,12 @@ graph, snapshot/diff, state→audio experiments, UI, and docs.
 5. **Live runtime capture** — run the MIDI Remote probe + bridge against a real
    Cubase; publish the measured capability matrix; wire Quick Controls into
    `DeviceParameterState` (partial, honest parameter observation).
-6. **Score-state extraction** — MusicXML/Dorico → `ScoreState`; study
-   performed-vs-notated divergence (representational vs. acoustically-active).
+6. ~~**Score-state extraction.**~~ **Done (v0, MusicXML):**
+   `extractors/musicxml.py` parses parts, key/time signatures and pitched notes
+   *with spelling* into `ScoreState`; `compare_performance_to_score` reports
+   enharmonic reinterpretations (e.g. MIDI 63 notated Eb4 vs default D#4) as
+   acoustically-inert representational divergence. Remaining: Dorico
+   interchange, timing-aligned matching, display-quantization comparison.
 7. **Structural fingerprint + similarity + retrieval**, reusing the REAPER/
    Ableton approach on the Cubase graph.
 8. **Cross-DAW dataset** — unify `observations.jsonl` across REAPER/Ableton/

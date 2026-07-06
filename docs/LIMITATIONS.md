@@ -16,9 +16,12 @@ contribution — not a disclaimer to bury.
 3. **MIDI Remote is not a project API.** It observes the selected channel +
    transport + a mixer bank + Quick Controls. Insert enumeration, routing,
    folders, and automation curves are not exposed (`MIDI_REMOTE_CAPABILITY_REPORT.md`).
-4. **Score/notation is schema-ready but not parsed.** `ScoreState` exists so the
-   representational layer can be added without migration; MusicXML/Dorico parsing
-   is deferred.
+4. **Score/notation is parsed from MusicXML only, modestly.** `ScoreState` now
+   carries parts, key/time signatures and pitched notes *with spelling* from
+   `.musicxml`/`.mxl`, and the performed-vs-notated comparison flags enharmonic
+   reinterpretations. Not covered: Dorico interchange, layout/engraving detail,
+   `score-timewise`, unpitched notes, timing-aligned matching (the comparison is
+   a pitch multiset, stated in its output).
 5. **Chord/scale, tempo maps, CC/pitch-bend/aftertouch** are modelled but only
    partially populated from current surfaces.
 6. **Heuristics are labelled, never asserted as fact.** `role` and

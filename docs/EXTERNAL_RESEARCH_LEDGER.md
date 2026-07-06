@@ -62,6 +62,26 @@ for channel-role enums, standalone `<Channel>`, built-in devices, `<Send><Enable
 
 > Bitwig marketing ("preserves … automation … third-party plug-in state") describes the **format's** ceiling, NOT Cubase's behavior — not cited as Cubase capability.
 
+## Addendum (2026-07-06): VST3 preset file format (local SDK)
+
+The `.vstpreset` parser (`extractors/vstpreset.py`) is grounded in the **official
+VST3 SDK on local disk** (`/Volumes/Mac-Storage/GitHub/vst3sdk`):
+
+- `public.sdk/source/vst/vstpresetfile.h` — the format is documented in the
+  header comment: `'VST3'` magic + int32 version + 32-byte ASCII class id
+  (component/processor FUID) + int64 chunk-list offset; `'List'` + int32 count +
+  entries of (4-byte id, int64 offset, int64 size).
+- `vstpresetfile.cpp` — chunk ids `Comp`/`Cont`/`Prog`/`Info`/`List`,
+  `kFormatVersion = 1`, header size 48.
+- `pluginterfaces/vst/vstpresetkeys.h` — MediaBay Info attributes
+  (`PlugInName`, `PlugInCategory`, `Name`, `FileName`, `StateType`, ...).
+
+**License posture:** no SDK code is copied or redistributed; only the factual
+file-format constants (magic strings, field sizes/offsets, attribute keys) are
+implemented, in original Python. The `Comp`/`Cont` payloads are each plug-in's
+own opaque serialization — the parser fingerprints them and never claims to
+decode parameter values generically.
+
 ## Legal constraints observed
 
 - No Steinberg proprietary code (incl. the VST3 SDK) is redistributed in this repo.
