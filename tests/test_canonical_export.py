@@ -12,8 +12,12 @@ import os
 
 import pytest
 
-from canonical_snapshot import validate_snapshot
-from cubase_session_explorer.canonical_export import exporter
+# The shared contract package lives in the analyzer repo and is installed only
+# in dev environments; skip cleanly in CI without it (sibling-repo policy).
+pytest.importorskip("canonical_snapshot")
+
+from canonical_snapshot import validate_snapshot  # noqa: E402
+from cubase_session_explorer.canonical_export import exporter  # noqa: E402
 from cubase_session_explorer.canonical_export.mapper import (
     session_state_to_canonical,
     to_canonical,
