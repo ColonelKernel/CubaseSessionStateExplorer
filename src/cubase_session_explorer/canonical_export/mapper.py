@@ -40,6 +40,8 @@ from typing import Optional
 
 from canonical_snapshot.ids import namespaced
 from canonical_snapshot.nested import (
+    Automation,
+    AutomationPoint,
     CanonicalSession,
     Clip,
     HiddenStateMarker,
@@ -257,6 +259,62 @@ def _map_folder(folder: FolderState, source_artifact: str) -> Track:
     )
 
 
+def _map_automation(state: SessionState, source_artifact: str) -> list[Automation]:
+    """Map native ``AutomationLane``s into nested ``Automation`` control lanes.
+
+    Each lane names what it controls: a plug-in parameter when ``device_id`` is
+    set (→ ``target_processor_id`` + ``target_parameter_id``), otherwise a
+    channel-strip mixer field named by the lane's parameter ("Volume" →
+    ``target_channel_field="volume"``). ``flatten_session`` then emits an
+    AUTOMATION entity per lane and resolves a CONTROLS edge to that target.
+    Provenance is OBSERVED — DAWproject is an official Cubase export.
+    """
+    lanes: list[Automation] = []
+    for lane in state.automation:
+        lanes.append(
+            Automation(
+                id=namespaced(DIALECT, lane.id),
+                parameter_name=lane.parameter_name,
+                target_track_id=(
+                    namespaced(DIALECT, lane.track_id) if lane.track_id else None
+                ),
+                target_processor_id=(
+                    namespaced(DIALECT, lane.device_id) if lane.device_id else None
+                ),
+                target_parameter_id=(
+                    namespaced(DIALECT, lane.parameter_id)
+                    if lane.parameter_id
+                    else None
+                ),
+                # Channel-strip automation (no owning device) targets a mixer
+                # field named by the lane parameter, lower-cased.
+                target_channel_field=(
+                    lane.parameter_name.lower()
+                    if lane.device_id is None and lane.parameter_name
+                    else None
+                ),
+                unit=lane.unit,
+                read_enabled=lane.read_enabled,
+                write_enabled=lane.write_enabled,
+                muted=lane.muted,
+                points=[
+                    AutomationPoint(
+                        time=point.time_beats,
+                        value=point.value,
+                        time_domain="beats",
+                        curve=point.curve,
+                    )
+                    for point in lane.points
+                ],
+                provenance=_map_prov(lane.provenance, source_artifact),
+                field_provenance=_map_field_prov(lane, source_artifact),
+                extras=_entity_extras(lane),
+                raw_source=lane.raw_source or None,
+            )
+        )
+    return lanes
+
+
 def _hidden_markers(state: SessionState) -> list[HiddenStateMarker]:
     markers = []
     for unknown in state.unknown_state:
@@ -375,6 +433,7 @@ def session_state_to_canonical(
         sample_rate=state.project.sample_rate,
         tracks=tracks,
         routes=routes,
+        automation=_map_automation(state, source_artifact),
         hidden_state_markers=_hidden_markers(state),
         warnings=list(state.warnings),
         metadata={

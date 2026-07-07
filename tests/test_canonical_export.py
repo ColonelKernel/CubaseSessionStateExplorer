@@ -154,6 +154,35 @@ def test_native_payload_round_trip():
     assert to_native(session) == state
 
 
+def test_mapper_emits_automation_from_demo_dawproject(fixtures_dir):
+    """The demo dawproject carries a real vocal-Volume lane; ``to_canonical``
+    must forward it into ``session.automation`` (in addition to — not instead
+    of — the back-compat extras summary)."""
+    from cubase_session_explorer.fusion import ingest
+
+    src = os.path.join(fixtures_dir, "demo_session.dawproject")
+    state = ingest(src, hash_files=False).session
+    assert state.automation, "demo dawproject should carry an automation lane"
+
+    session = to_canonical(state)
+    assert session.automation, "to_canonical must populate session.automation"
+
+    lane = next(a for a in session.automation if a.parameter_name == "Volume")
+    assert lane.unit == "linear"
+    assert len(lane.points) == 3
+    assert [p.value for p in lane.points] == [0.6, 0.8, 0.7]
+    assert all(p.time_domain == "beats" for p in lane.points)
+    # Channel-strip Volume automation → mixer field, not a device parameter.
+    assert lane.target_processor_id is None
+    assert lane.target_channel_field == "volume"
+    assert lane.target_track_id == "cubase:track-tr-ch-vox"
+    assert lane.target_parameter_id == "cubase:ch-vox-vol"
+    # DAWproject is an official export → OBSERVED.
+    assert lane.provenance.observability == "observed"
+    # Back-compat: the extras summary is still emitted alongside the model.
+    assert session.extras.get("automation_lanes")
+
+
 # ---------------------------------------------------------------------------
 # bundle: .dawproject (full-strength pathway)
 # ---------------------------------------------------------------------------
@@ -202,6 +231,29 @@ def test_dawproject_bundle_track_channel_split(demo_bundle):
     # send level rides the routing edge
     sends = snap.relationships_of_type("CHANNEL_SENDS_TO")
     assert sends and any("volume_db" in r.properties for r in sends)
+
+
+def test_dawproject_bundle_automation_controls_channel(demo_bundle):
+    """The real vocal-Volume lane becomes an AUTOMATION entity whose CONTROLS
+    edge targets the vocal channel's volume field."""
+    snap = demo_bundle.snapshot
+    autos = snap.entities_of_type("AUTOMATION")
+    assert len(autos) == 1
+    auto = autos[0]
+    assert auto.properties["unit"] == "linear"
+    assert auto.properties["point_count"] == 3
+    assert auto.availability == {}  # target resolved, not an UNKNOWN
+
+    controls = snap.relationships_of_type("CONTROLS")
+    assert len(controls) == 1
+    edge = controls[0]
+    assert edge.source == auto.id
+    assert edge.target == "cubase:track-tr-ch-vox:channel"
+    assert edge.properties.get("field") == "volume"
+
+    # snapshot-level automation array + coverage both reflect the lane
+    assert len(snap.automation) == 1
+    assert snap.coverage["automation"].observed == 1
 
 
 def test_dawproject_bundle_provenance_stability_and_evidence(demo_bundle):
