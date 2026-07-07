@@ -245,14 +245,49 @@ class MusicalStructure(BaseModel):
     chords: list[ChordEvent] = Field(default_factory=list)
 
 
+class ScoreNote(BaseModel):
+    """One *notated* note — spelling is the point. The same MIDI key can be
+    spelled many ways (61 = C#4 or Db4); that interpretive choice is exactly
+    what separates representational state from performed event state."""
+
+    step: str                      # C D E F G A B
+    alter: int = 0                 # -2..2 (flats/sharps)
+    octave: int = 4
+    duration_divisions: Optional[int] = None
+    voice: Optional[int] = None
+    measure: Optional[int] = None
+    part_id: Optional[str] = None
+
+    @property
+    def spelled(self) -> str:
+        acc = {-2: "bb", -1: "b", 0: "", 1: "#", 2: "##"}.get(self.alter, "?")
+        return f"{self.step}{acc}{self.octave}"
+
+    @property
+    def midi_key(self) -> int:
+        base = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[self.step]
+        return (self.octave + 1) * 12 + base + self.alter
+
+
+class ScorePart(BaseModel):
+    part_id: str
+    name: Optional[str] = None
+    instrument: Optional[str] = None
+    measure_count: Optional[int] = None
+
+
 class ScoreState(BaseModel):
-    """Notated / interpreted layer — distinct from performed MIDI. Deliberately
-    minimal in v0; the schema exists so score interpretation can be added
-    without a migration. Same performance can yield many notations."""
+    """Notated / interpreted layer — distinct from performed MIDI. The same
+    performance can yield many notations; populated fields are parsed from
+    MusicXML when available (see extractors/musicxml.py)."""
 
     present: bool = False
     layouts: list[dict[str, Any]] = Field(default_factory=list)
     notes: Optional[str] = None
+    parts: list[ScorePart] = Field(default_factory=list)
+    key_signatures: list[dict[str, Any]] = Field(default_factory=list)   # {fifths, mode, measure}
+    time_signatures: list[dict[str, Any]] = Field(default_factory=list)  # {numerator, denominator, measure}
+    pitched_notes: list[ScoreNote] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

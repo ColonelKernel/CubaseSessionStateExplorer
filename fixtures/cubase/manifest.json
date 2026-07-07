@@ -14,13 +14,13 @@
     },
     "dualfilter_a.dawproject": {
       "expected": {
-        "field": "automation[DualFilter/Position].points[0].value",
+        "field": "track[Gtr Wide].insert[DualFilter].param[Position]",
         "value": 0.25
       }
     },
     "dualfilter_b.dawproject": {
       "expected": {
-        "field": "automation[DualFilter/Position].points[0].value",
+        "field": "track[Gtr Wide].insert[DualFilter].param[Position]",
         "value": 0.75
       }
     },
@@ -33,6 +33,27 @@
       "expected": {
         "sends": 1,
         "new_node": "FX 1 - Plate"
+      }
+    },
+    "folder_group.dawproject": {
+      "expected": {
+        "folders": 1,
+        "folder_group_channel_enabled": true,
+        "children": [
+          "Kick",
+          "Snare"
+        ]
+      }
+    },
+    "opaque_a.dawproject": {
+      "expected": {
+        "field": "DualFilter opaque <State> blob (Position=-0.500)",
+        "note": "value not readable; blob hash differs from opaque_b"
+      }
+    },
+    "opaque_b.dawproject": {
+      "expected": {
+        "field": "DualFilter opaque <State> blob (Position=+0.500)"
       }
     }
   },

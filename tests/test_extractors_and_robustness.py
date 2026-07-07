@@ -6,6 +6,35 @@ from cubase_session_explorer.graph_builder import build_graph_dict
 from cubase_session_explorer.snapshot import load_snapshot, save_snapshot
 
 
+def test_element_census_flags_handled_vs_unhandled(fixtures_dir):
+    from cubase_session_explorer.extractors.dawproject import HANDLED_ELEMENTS, element_census
+    census = element_census(os.path.join(fixtures_dir, "demo_session.dawproject"))
+    # our own fixtures are fully handled by construction
+    assert census["unhandled_elements"] == {}
+    assert "Track" in census["element_counts"]
+    assert "master" in census["channel_roles"]
+    assert "Vst3Plugin" in census["device_elements"]
+    # an injected unknown element must be reported (real-export hardening loop)
+    import io, zipfile
+    src = os.path.join(fixtures_dir, "demo_session.dawproject")
+    with zipfile.ZipFile(src) as z:
+        xml = z.read("project.xml").decode()
+    xml = xml.replace("</Structure>", "<CubaseFutureThing foo='1'/></Structure>")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("project.xml", xml)
+    buf.seek(0)
+    tmp = os.path.join(fixtures_dir, "_census_probe.dawproject")
+    with open(tmp, "wb") as fh:
+        fh.write(buf.getvalue())
+    try:
+        c2 = element_census(tmp)
+        assert "CubaseFutureThing" in c2["unhandled_elements"]
+        assert "CubaseFutureThing" not in HANDLED_ELEMENTS
+    finally:
+        os.remove(tmp)
+
+
 def test_midi_extractor(fixtures_dir):
     res = midi.extract(os.path.join(fixtures_dir, "notes.mid"))
     assert res.ok

@@ -50,6 +50,29 @@ Access levels: **D** direct/high-confidence · **I** indirect/inference ·
 Legend for the last column: ✅ implemented in v0 · ◐ available when the artifact
 is present · ○ schema-ready, extraction deferred.
 
+## Format capability ≠ Cubase's actual export
+
+The grid above rates the DAWproject **format**. Cubase's **exporter** is more
+limited, and conflating the two would be dishonest. Grounded in Steinberg docs +
+staff forum replies + independent testing (Cubase 14/15):
+
+| Field | Format (DAWproject) | Cubase 15's actual writer |
+|---|---|---|
+| automation events/lanes | D | **often omitted** (Steinberg roadmap item) |
+| MIDI CC / CC64 / Note Expression | (extensible) | **not exported** (staff-confirmed) |
+| channel strip / crossfades | — | **not exported** (staff-confirmed) |
+| plug-in parameters / state | opaque blob or Parameters | **best-effort**: engine recreated, loaded content/settings often lost |
+| sends / fader / pan / routing to groups | D | **carried** (independently tested) |
+| tempo / time-sig / tracks / clips | D | **carried** |
+
+Consequence for this adapter: on a *real* Cubase export, expect readable tracks/
+routing/sends but **possibly no automation** and **opaque inserts**. The importer
+reports that faithfully via `unknown_state` rather than inventing values. The
+`diagnose` command surfaces exactly which fields a given export did and didn't
+carry. Built-in Steinberg devices that DO serialize enumerable `<Parameters>`
+(e.g. an internal EQ) are read as real, observed values — a genuine partial win
+against the plug-in-parameter wall.
+
 ## Reading the matrix
 
 - **DAWproject is the backbone.** It is the only surface that is `D` for

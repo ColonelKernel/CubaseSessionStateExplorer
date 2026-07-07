@@ -64,13 +64,21 @@ def test_automation_lane(fixtures_dir):
     assert s.automation[0].point_count == 3
 
 
-def test_plugin_parameters_are_explicitly_unavailable(fixtures_dir):
+def test_builtin_params_readable_vst3_params_unavailable(fixtures_dir):
     s = _session(fixtures_dir, "demo_session.dawproject")
-    # No fabricated parameter values...
-    assert all(len(d.parameters) == 0 for d in s.all_devices())
-    # ...and the gap is a first-class object, not silence.
-    gaps = {u.state_gap for u in s.unknown_state}
-    assert "plugin_parameters" in gaps
+    # Built-in devices (Equalizer/Compressor) expose REAL parameter values...
+    kick = next(t for t in s.all_tracks() if t.name == "Kick")
+    eq = next(d for d in kick.devices if d.name == "Frequency")
+    assert eq.device_family == "EQ"
+    assert any(p.name == "Low Gain" and p.value == 0.6 for p in eq.parameters)
+    assert eq.parameters[0].provenance.status == "exported"  # observed, not guessed
+    # ...while an opaque VST3 (State blob, no enumerable params) is NOT fabricated
+    # and is explicitly flagged unavailable.
+    vox = next(t for t in s.all_tracks() if t.name == "Lead Vox")
+    opaque = next(d for d in vox.devices if d.name == "StudioEQ")
+    assert opaque.parameters == []
+    assert opaque.field_provenance["parameters"].status == "unavailable"
+    # The gap is a first-class object, not silence.
     assert any(u.state_gap == "insert_parameter_state" for u in s.unknown_state)
 
 
@@ -85,3 +93,19 @@ def test_provenance_is_attached(fixtures_dir):
     vox = next(t for t in s.tracks if t.name == "Lead Vox")
     assert vox.provenance.status == "exported"
     assert vox.provenance.source.type == "dawproject"
+
+
+def test_folder_with_group_channel_is_distinct(fixtures_dir):
+    s = _session(fixtures_dir, "folder_group.dawproject")
+    # the folder-vs-group distinction is preserved, not flattened
+    assert len(s.folders) == 1
+    folder = s.folders[0]
+    assert folder.group_channel_enabled is True
+    assert folder.organizational_only is False
+    assert len(folder.child_track_ids) == 2
+    # the folder is itself a summing group bus...
+    assert any(t.track_type == "group" for t in s.groups)
+    # ...and its children are nested (parent_id set) AND route into it
+    kick = next(t for t in s.all_tracks() if t.name == "Kick")
+    assert kick.parent_id is not None
+    assert any(r.source_track_id == kick.id for r in s.routes)

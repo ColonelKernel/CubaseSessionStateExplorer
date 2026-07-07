@@ -24,7 +24,7 @@ from typing import Optional
 
 from . import observation_model as om
 from .bundle import Bundle, discover
-from .extractors import cpr_lab, dawproject, midi, runtime, track_archive
+from .extractors import cpr_lab, dawproject, midi, musicxml, runtime, track_archive, vstpreset
 from .ids import stable_id
 from .models import (
     ProjectMeta,
@@ -109,21 +109,51 @@ def fuse(bundle: Bundle) -> FusionResult:
             base.project.cubase_version = rep.app_version
 
     # 3b. MIDI content -------------------------------------------------------
+    midi_results: list["midi.MidiResult"] = []
     for art in bundle.of_type("midi_export"):
         res = midi.extract(art.path)
         per_extractor["midi"] = {"ok": res.ok, "n_tracks": len(res.tracks)}
         warnings.extend(res.warnings)
         if res.ok:
+            midi_results.append(res)
             _attach_midi(base, res)
             base.capture.artifacts.append("midi_export")
 
+    # 3c. MusicXML notation layer (representational state) -------------------
     for art in bundle.of_type("musicxml_export"):
-        base.capture.artifacts.append("musicxml_export")
-        base.score_state.present = True
-        base.score_state.notes = (
-            f"MusicXML present ({art.path.rsplit('/', 1)[-1]}); notation layer "
-            "recognized but not fully parsed in v0."
-        )
+        res = musicxml.extract(art.path)
+        per_extractor["musicxml"] = {
+            "ok": res.ok,
+            "n_parts": len(res.score.parts),
+            "n_pitched_notes": len(res.score.pitched_notes),
+        }
+        warnings.extend(res.warnings)
+        if res.ok:
+            base.score_state = res.score
+            base.capture.artifacts.append("musicxml_export")
+            # Performed vs. notated: relate the MIDI layer to its notation.
+            # Performed notes come from structural clips when present, else
+            # directly from the MIDI export (which may not match a track name).
+            perf = [n for t in base.all_tracks() for c in t.clips for n in c.notes]
+            if not perf:
+                perf = [n for mres in midi_results for mt in mres.tracks
+                        for n in mt.notes]
+            if perf and res.score.pitched_notes:
+                base.metadata["score_vs_performance"] = \
+                    musicxml.compare_performance_to_score(perf, res.score)
+
+    # 3d. Preset evidence (plug-in identity + opaque-state fingerprints) -----
+    for art in bundle.of_type("preset"):
+        res = vstpreset.extract(art.path)
+        per_extractor.setdefault("preset", []).append(
+            {"path": art.path, "ok": res.ok, "plugin_name": res.plugin_name,
+             "class_id": res.class_id})
+        warnings.extend(res.warnings)
+        if not res.ok:
+            continue
+        base.capture.artifacts.append("preset")
+        base.metadata.setdefault("preset_evidence", []).append(res.to_dict())
+        _attach_preset(base, res)
 
     for art in bundle.of_type("rendered_audio"):
         base.capture.artifacts.append("rendered_audio")
@@ -206,6 +236,45 @@ def _attach_midi(base: SessionState, res: "midi.MidiResult") -> None:
                     break
         else:
             base.metadata.setdefault("orphan_midi_tracks", {})[mt.name or "?"] = note_count
+
+
+def _attach_preset(base: SessionState, res: "vstpreset.VstPresetResult") -> None:
+    """Enrich matching devices with preset evidence.
+
+    Match order: VST3 class id (strong — the processor FUID), then plug-in
+    name (weaker, case-insensitive). Enrichment: ``preset_name``, class id,
+    and the Comp/Cont state fingerprints — identity and *detectability* of the
+    opaque state, never fabricated parameter values.
+    """
+    comp = res.chunk("Comp")
+    cont = res.chunk("Cont")
+    matched = False
+    for dev in base.all_devices():
+        by_class = bool(res.class_id and dev.plugin_identifier
+                        and dev.plugin_identifier.upper() == res.class_id)
+        by_name = bool(res.plugin_name
+                       and dev.name.lower() == res.plugin_name.lower())
+        if not (by_class or by_name):
+            continue
+        matched = True
+        if res.preset_name and not dev.preset_name:
+            dev.preset_name = res.preset_name
+            dev.field_provenance["preset_name"] = parsed(
+                "preset", confidence=0.9 if by_class else 0.7,
+                explanation=("matched by VST3 class id" if by_class
+                             else f"matched by plug-in name '{res.plugin_name}'"),
+                artifact=res.path.rsplit("/", 1)[-1],
+            )
+        native = dev.native.setdefault("cubase", {})
+        native["vstpreset_class_id"] = res.class_id
+        if comp and comp.sha16:
+            native["vstpreset_comp_sha"] = comp.sha16
+        if cont and cont.sha16:
+            native["vstpreset_cont_sha"] = cont.sha16
+    if not matched:
+        base.warnings.append(
+            f"Preset '{res.plugin_name or res.path.rsplit('/', 1)[-1]}' did not "
+            "match any device in the structural session; kept as evidence only.")
 
 
 def _derive_unknown_state(session: SessionState) -> None:

@@ -16,9 +16,12 @@ contribution — not a disclaimer to bury.
 3. **MIDI Remote is not a project API.** It observes the selected channel +
    transport + a mixer bank + Quick Controls. Insert enumeration, routing,
    folders, and automation curves are not exposed (`MIDI_REMOTE_CAPABILITY_REPORT.md`).
-4. **Score/notation is schema-ready but not parsed.** `ScoreState` exists so the
-   representational layer can be added without migration; MusicXML/Dorico parsing
-   is deferred.
+4. **Score/notation is parsed from MusicXML only, modestly.** `ScoreState` now
+   carries parts, key/time signatures and pitched notes *with spelling* from
+   `.musicxml`/`.mxl`, and the performed-vs-notated comparison flags enharmonic
+   reinterpretations. Not covered: Dorico interchange, layout/engraving detail,
+   `score-timewise`, unpitched notes, timing-aligned matching (the comparison is
+   a pitch multiset, stated in its output).
 5. **Chord/scale, tempo maps, CC/pitch-bend/aftertouch** are modelled but only
    partially populated from current surfaces.
 6. **Heuristics are labelled, never asserted as fact.** `role` and
@@ -32,8 +35,19 @@ contribution — not a disclaimer to bury.
    artifacts is the documented next tier (`CUBASE_FIXTURE_PROTOCOL.md`).
 9. **DAWproject variability.** Exporters vary (element vs. attribute placement,
    device element names). The parser is tolerant and keeps unknowns in
-   `raw_source`, but has been validated against our fixtures + the published
-   spec, not the full matrix of real-world exporters.
+   `raw_source`. It is validated against our fixtures, the published XSD, **and a
+   real Bitwig-exported example** (`tests/test_real_dawproject.py`) — but not yet
+   against a genuine *Cubase*-emitted file (the documented next step needs a
+   licensed Cubase; see `CUBASE_EXPORT_INSTRUCTIONS.md`).
+
+10. **Cubase's exporter is narrower than the format.** Independent testing +
+    Steinberg staff confirm Cubase 15's DAWproject export commonly **omits
+    automation**, and does not export **MIDI CC/CC64/Note Expression/channel
+    strip/crossfades**; **plug-in state is best-effort** (engine recreated,
+    settings often lost). So a real Cubase export may legitimately yield no
+    automation lanes and opaque inserts — reported honestly, not a parser bug.
+    Enumerable built-in-device `<Parameters>` (when Cubase writes them) *are*
+    read as observed values. See `CUBASE_CAPABILITY_MATRIX.md`.
 
 ## Known sharp edges
 
