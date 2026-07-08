@@ -123,6 +123,12 @@ class SendState(Provenanced):
     pan: Optional[float] = None
     enabled: Optional[bool] = True
     pre_fader: Optional[bool] = None   # None => unrecoverable from this surface
+    # Per-send destination-channel decode (DAWproject: the Send ``destination``
+    # IDREF resolves to a <Channel> whose ``audioChannels`` states the port
+    # width). ``None`` throughout => stereo-implicit, never an invented spec.
+    destination_channel_id: Optional[str] = None  # native <Channel> id the send feeds
+    channel_count: Optional[int] = None           # destination port width, when observed
+    channel_layout: Optional[str] = None          # "mono" | "stereo" | "<n>ch"
 
 
 class RouteState(Provenanced):
@@ -169,6 +175,7 @@ class AutomationLane(Provenanced):
 TrackType = Literal[
     "audio", "midi", "instrument", "group", "fx", "folder",
     "marker", "chord", "ruler", "video", "automation", "master",
+    "vca",   # DAWproject mixerRole 'vca': scales member levels, sums NO audio
 ]
 
 
@@ -189,6 +196,10 @@ class TrackState(Provenanced):
     frozen: Optional[bool] = None
     channel_config: Optional[str] = None   # "mono" | "stereo" | ...
     output_target_id: Optional[str] = None
+    # VCA / link-group control: canonical ids of the tracks whose faders this
+    # track scales. Control, not summing — a VCA carries no audio, so these
+    # must never be represented as output routes or group sums.
+    controls: list[str] = Field(default_factory=list)
     clips: list[ClipState] = Field(default_factory=list)
     devices: list[DeviceState] = Field(default_factory=list)
     sends: list[SendState] = Field(default_factory=list)

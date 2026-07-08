@@ -45,6 +45,20 @@
         ]
       }
     },
+    "vca_sends.dawproject": {
+      "expected": {
+        "vca": "Drum VCA",
+        "controls": [
+          "Kick",
+          "Snare"
+        ],
+        "vca_sums_audio": false,
+        "send_destination_widths": {
+          "ch-fx1": 2,
+          "ch-fx2": 1
+        }
+      }
+    },
     "opaque_a.dawproject": {
       "expected": {
         "field": "DualFilter opaque <State> blob (Position=-0.500)",

@@ -84,6 +84,11 @@ _TRACK_KIND = {
     "fx": "return",
     "folder": "group",
     "master": "master",
+    # A VCA is neither a summing group nor an audio track: kind stays
+    # "unknown" with role "VCA" (the X06 contract-exhibit convention), its
+    # CONTROLS edges carry the semantics, and sums_children=False keeps the
+    # flattener's _group_sums honesty from ever claiming an audio sum.
+    "vca": "unknown",
 }
 
 
@@ -224,6 +229,9 @@ def _map_track(
         solo=track.solo,
         armed=track.record_enabled,
         group_id=namespaced(DIALECT, track.parent_id) if track.parent_id else None,
+        # Grouping honesty: a VCA scales member faders and sums NO audio.
+        sums_children=False if track.track_type == "vca" else None,
+        controls=[namespaced(DIALECT, tid) for tid in track.controls],
         clips=[_map_clip(clip, source_artifact) for clip in track.clips],
         processors=[_map_device(dev, source_artifact) for dev in track.devices],
         provenance=_map_prov(track.provenance, source_artifact),
@@ -324,12 +332,19 @@ def session_state_to_canonical(
                     volume_db=send.level_db,
                     pan=send.pan,
                     enabled=send.enabled,
+                    # Per-send channel spec (P6): populated only when the
+                    # extractor decoded the destination <Channel>'s observed
+                    # width; None stays None (stereo-implicit on the wire).
+                    channel_count=send.channel_count,
+                    channel_layout=send.channel_layout,
                     provenance=_map_prov(send.provenance, source_artifact),
                     extras={
                         key: value
                         for key, value in (
                             ("send_name", send.send_name),
                             ("pre_fader", send.pre_fader),
+                            ("destination_channel_id", send.destination_channel_id),
+                            ("native", dict(send.native) if send.native else None),
                         )
                         if value is not None
                     },
