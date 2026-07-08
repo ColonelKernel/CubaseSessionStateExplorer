@@ -14,6 +14,7 @@ Fixtures produced (subset of docs/CUBASE_FIXTURE_PROTOCOL.md):
   dualfilter_a/b.wav             matching renders (low-pass vs high-pass tone)
   routing_a/b.dawproject         dry vocal  vs  vocal + reverb send
   routing_a/b.wav                matching renders (dry vs reverb tail)
+  vca_sends.dawproject           vca-role channel + mono/stereo send targets
   notes.mid                      a short MIDI performance
   manifest.json                  expected-value manifest for validation
 """
@@ -69,11 +70,11 @@ def add_master(structure, name="Stereo Out", ch_id="ch-master"):
 
 def add_track(structure, name, ch_id, destination, content="audio",
               volume=0.85, pan=0.5, role=None, color=None, devices=None,
-              sends=None):
+              sends=None, audio_channels="2"):
     tr = _sub(structure, "Track", id=f"tr-{ch_id}", name=name,
               contentType=content, loaded="true", color=color)
     ch = _sub(tr, "Channel", id=ch_id, destination=destination,
-              audioChannels="2", role=role)
+              audioChannels=audio_channels, role=role)
     _real(ch, "Volume", volume, unit="linear", pid=f"{ch_id}-vol")
     _real(ch, "Pan", pan, unit="normalized", pid=f"{ch_id}-pan")
     _sub(ch, "Mute", value="false", id=f"{ch_id}-mute")
@@ -399,6 +400,32 @@ def make_folder_group(path):
     write_dawproject(root, path)
 
 
+def make_vca_sends(path):
+    """P6 routing depth: a vca-role channel whose members reference it by
+    ``destination`` IDREF (level control, never an audio sum), plus sends whose
+    destination <Channel>s state their width (stereo FX 1 vs mono FX 2) so the
+    per-send channel spec is genuinely observable."""
+    root, structure, arr, lanes = build_project()
+    master = add_master(structure)
+    add_track(structure, "FX 1 - Plate", "ch-fx1", master, role="effect",
+              devices=[{"name": "REVerence"}])
+    add_track(structure, "FX 2 - Slap", "ch-fx2", master, role="effect",
+              audio_channels="1", devices=[{"name": "MonoDelay"}])
+    # VCA fader: role 'vca', a Volume fader, no destination and no audio
+    # width — a VCA carries no signal, so stating either would be invention.
+    vca_tr = _sub(structure, "Track", id="tr-vca", name="Drum VCA",
+                  contentType="audio", loaded="true", color="#7A6FBE")
+    vch = _sub(vca_tr, "Channel", id="ch-vca", role="vca")
+    _real(vch, "Volume", 0.9, unit="linear", pid="ch-vca-vol")
+    # Members: their destination IDREFs resolve to the VCA channel.
+    add_track(structure, "Kick", "ch-kick", "ch-vca",
+              sends=[{"destination": "ch-fx1", "level": 0.3, "name": "FX 1"}])
+    add_track(structure, "Snare", "ch-snare", "ch-vca",
+              sends=[{"destination": "ch-fx2", "level": 0.2, "name": "FX 2"}])
+    add_clip(lanes, "ch-kick", 0.0, 8.0, "Kick", audio="audio/kick.wav")
+    write_dawproject(root, path)
+
+
 def make_opaque(path, position):
     """Opaque VST3: DualFilter as a Vst3Plugin with a <State> blob whose BYTES
     encode the setting. Values are not readable, but the blob hash makes a
@@ -453,6 +480,8 @@ def main(argv):
 
     make_folder_group(os.path.join(out, "folder_group.dawproject"))
 
+    make_vca_sends(os.path.join(out, "vca_sends.dawproject"))
+
     make_opaque(os.path.join(out, "opaque_a.dawproject"), -0.5)
     make_opaque(os.path.join(out, "opaque_b.dawproject"), +0.5)
 
@@ -490,6 +519,10 @@ def main(argv):
             "folder_group.dawproject": {"expected": {
                 "folders": 1, "folder_group_channel_enabled": True,
                 "children": ["Kick", "Snare"]}},
+            "vca_sends.dawproject": {"expected": {
+                "vca": "Drum VCA", "controls": ["Kick", "Snare"],
+                "vca_sums_audio": False,
+                "send_destination_widths": {"ch-fx1": 2, "ch-fx2": 1}}},
             "opaque_a.dawproject": {"expected": {
                 "field": "DualFilter opaque <State> blob (Position=-0.500)",
                 "note": "value not readable; blob hash differs from opaque_b"}},

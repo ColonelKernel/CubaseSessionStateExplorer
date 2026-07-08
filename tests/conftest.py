@@ -15,7 +15,8 @@ if SRC not in sys.path:
 @pytest.fixture(scope="session", autouse=True)
 def _fixtures():
     """Ensure fixtures exist (generate them once if missing)."""
-    if not os.path.exists(os.path.join(FIXTURES, "demo_session.dawproject")):
+    required = ("demo_session.dawproject", "vca_sends.dawproject")
+    if not all(os.path.exists(os.path.join(FIXTURES, name)) for name in required):
         subprocess.run([sys.executable, os.path.join(ROOT, "tools", "make_fixtures.py"),
                         FIXTURES], check=True)
     return FIXTURES

@@ -19,7 +19,8 @@ Where Cubase carries a semantic the canonical layer would flatten, it lives in
 | Group | folder/submix (warned) | Group Track | hidden | `groups` (`track_type="group"`) — a **summing** bus |
 | Folder | `FOLDER` (flattened) | group | track stack (hidden) | `FolderState`: **organizational_only vs. group_channel_enabled** kept distinct |
 | Routing edge (output) | `AUXRECV`/main send | `routes_to_master` | hidden | `RouteState(route_type="output")` → graph `ROUTES_TO`/`SUMS` |
-| Send | `RouteState` (send_mode) | `SendState` | hidden | `SendState` (`pre_fader` when recoverable) → graph `SENDS_TO` (**not** containment) |
+| Send | `RouteState` (send_mode) | `SendState` | hidden | `SendState` (`pre_fader` when recoverable; per-send `destination_channel_id` + `channel_count`/`channel_layout` from the destination `<Channel>`'s observed `audioChannels`) → graph `SENDS_TO` (**not** containment) |
+| VCA / control group | — | — | hidden | `track_type="vca"` + `TrackState.controls` → wire `CONTROLS` (`kind=vca_or_edit_group`), **never** `SUMS_TO` |
 | Automation | not modelled | `is_automated` flag only | hidden | `AutomationLane` → `AutomationPoint[]` w/ curve type (**first-class**) |
 | Instrument | — | device (instrument) | — | instrument `DeviceState` on `instrument` track + MIDI source |
 | Tempo state | scalar | scalar | from MIDI | `tempo` + `MusicalStructure.tempo_map` (ramp/jump) |
@@ -40,6 +41,10 @@ Where Cubase carries a semantic the canonical layer would flatten, it lives in
 - **An instrument track is not a MIDI track.** It couples a MIDI source, a VST
   instrument, and an audio output channel. `native.cubase.is_instrument_track`
   and the instrument `DeviceState` keep this explicit.
+- **A VCA is not a group bus.** A `role="vca"` channel scales member
+  faders and sums no audio: members' `destination` IDREFs into it become
+  `TrackState.controls` (INFERRED, with rationale) → `CONTROLS` edges,
+  never an output `RouteState` or a `SUMS_TO` claim.
 - **A send is not parent-child containment.** `SENDS_TO` is a distinct edge type
   from `CONTAINS`/`SUMS`; a send has level/pan/pre-post, not membership.
 - **Performed vs. notated state.** `ClipState.notes` (MIDI performance) and

@@ -47,7 +47,7 @@ from ..models import (
     TempoEvent,
     TrackState,
 )
-from ..provenance import exported, parsed, unavailable
+from ..provenance import exported, inferred, parsed, unavailable
 from ..utils import linear_to_db, safe_float, safe_int
 
 DAWPROJECT_SOURCE = "dawproject"
@@ -377,7 +377,11 @@ def _classify_track_type(ttype: str, role: str, has_children: bool) -> str:
         return "master"
     if r == "effect":
         return "fx"
-    if r in ("submix", "vca"):
+    if r == "vca":
+        # A VCA scales member faders but sums NO audio; it must never be
+        # conflated with a submix/group bus (grouping honesty).
+        return "vca"
+    if r == "submix":
         return "group"
     if has_children:
         # a nested container: group if it has its own channel, else organizational
@@ -433,6 +437,14 @@ def _read_channel(
     if cfg:
         track.channel_config = {"1": "mono", "2": "stereo"}.get(cfg, f"{cfg}ch")
 
+    if (role or "").lower() == "vca":
+        # The mixerRole vocabulary is exact; surface it as the track role too.
+        track.role = "VCA"
+        track.field_provenance["role"] = exported(
+            source_type=DAWPROJECT_SOURCE,
+            locator=f"Channel[{native_channel_id}]@role",
+        )
+
     # Register channel-level parameters so automation Targets (IDREFs) resolve.
     for pel, pname in ((vol_el, "Volume"), (pan_el, "Pan"), (mute_el, "Mute")):
         if pel is not None and pel.get("id"):
@@ -445,6 +457,8 @@ def _read_channel(
         "track_id": track.id,
         "destination": destination,
         "role": role,
+        "channel_id": native_channel_id,
+        "audio_channels": safe_int(cfg) if cfg else None,
     }
     # A track may reference its channel id in routing; index the track id too.
     channel_index.setdefault(native_track_id, channel_index[native_channel_id])
@@ -639,6 +653,13 @@ def _resolve_routing(session: SessionState, channel_index: dict[str, dict[str, A
         if target == src_track or (src_track, target) in seen_routes:
             continue
         seen_routes.add((src_track, target))
+        if (channel_index.get(dest, {}).get("role") or "").lower() == "vca":
+            # A destination IDREF that resolves to a vca-role channel is a
+            # control link, NOT audio routing: a VCA scales member faders and
+            # sums no audio, so emitting an output route here would invent a
+            # signal path that does not exist.
+            _link_vca_control(session, src_track, target, dest)
+            continue
         session.routes.append(
             RouteState(
                 id=stable_id("route", src_track, dest),
@@ -671,10 +692,65 @@ def _resolve_routing(session: SessionState, channel_index: dict[str, dict[str, A
             session.groups.append(t)
 
     for track in session.all_tracks():
+        source_info = channel_index.get(
+            track.native.get("cubase", {}).get("dawproject_channel_id") or ""
+        )
         for send in track.sends:
             raw = send.raw_source.get("dawproject_destination")
-            if raw and raw in dest_to_track:
-                send.target_return_id = dest_to_track[raw]
+            dest_info = channel_index.get(raw) if raw else None
+            if dest_info is None:
+                continue
+            send.target_return_id = dest_info["track_id"]
+            # Per-send destination-channel decode: the Send ``destination``
+            # IDREF names an exact <Channel>; its ``audioChannels`` attribute
+            # states the width of the port this send feeds. Populated only
+            # from what the XML says — absent width stays None
+            # (stereo-implicit), never an invented channel spec.
+            send.destination_channel_id = dest_info.get("channel_id") or raw
+            width = dest_info.get("audio_channels")
+            if width:
+                send.channel_count = width
+                send.channel_layout = {1: "mono", 2: "stereo"}.get(width, f"{width}ch")
+                width_prov = exported(
+                    source_type=DAWPROJECT_SOURCE,
+                    locator=f"Channel[{send.destination_channel_id}]@audioChannels",
+                )
+                send.field_provenance["channel_count"] = width_prov
+                send.field_provenance["channel_layout"] = width_prov
+            # Endpoint widths recorded verbatim (only where the XML states them).
+            if width is not None:
+                send.native.setdefault("cubase", {})["destination_audio_channels"] = width
+            source_width = (source_info or {}).get("audio_channels")
+            if source_width is not None:
+                send.native.setdefault("cubase", {})["source_audio_channels"] = source_width
+
+
+def _link_vca_control(
+    session: SessionState,
+    controlled_track_id: str,
+    vca_track_id: str,
+    vca_channel_id: str,
+) -> None:
+    """Record that a vca-role channel controls a member track's level.
+
+    The member's ``destination`` IDREF is OBSERVED; reading it as level
+    control (rather than an output route) is an interpretation, so the
+    ``controls`` list is marked INFERRED with the rationale.
+    """
+    vca = session.track_by_id(vca_track_id)
+    controlled = session.track_by_id(controlled_track_id)
+    if vca is None or controlled is None:
+        return
+    if controlled_track_id not in vca.controls:
+        vca.controls.append(controlled_track_id)
+    vca.field_provenance["controls"] = inferred(
+        "member channel destination IDREFs resolve to this vca-role <Channel>; "
+        "a VCA scales member levels and carries no audio, so the reference is "
+        "read as level control rather than an output route.",
+        confidence=0.85,
+        source_type=DAWPROJECT_SOURCE,
+    )
+    controlled.native.setdefault("cubase", {})["vca_channel_id"] = vca_channel_id
 
 
 def _walk_arrangement(
