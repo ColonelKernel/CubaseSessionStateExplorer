@@ -32,10 +32,19 @@ graph, snapshot/diff, state→audio experiments, UI, and docs.
    enharmonic reinterpretations (e.g. MIDI 63 notated Eb4 vs default D#4) as
    acoustically-inert representational divergence. Remaining: Dorico
    interchange, timing-aligned matching, display-quantization comparison.
-7. **Structural fingerprint + similarity + retrieval**, reusing the REAPER/
-   Ableton approach on the Cubase graph.
-8. **Cross-DAW dataset** — unify `observations.jsonl` across REAPER/Ableton/
-   Logic/Cubase; first prediction baselines (state → coarse acoustic descriptors).
+7. ~~**Structural fingerprint + similarity + retrieval.**~~ **Done (v0):**
+   `fingerprint.py` + `session-fingerprint` CLI compute a scale-invariant,
+   interpretable fingerprint (track-type proportions, device/effect balance,
+   routing/send/automation density, observability) from canonical concepts only;
+   `similarity` (cosine + Jaccard bags), `feature_deltas` (which axis explains a
+   difference), and `retrieve_similar` (cross-DAW). Remaining: learned
+   embeddings, temporal/automation-shape features.
+8. **Cross-DAW dataset** — **partly done:** `Observation.fingerprint` now rides
+   in `observations.jsonl` and `load_corpus` ingests foreign-DAW rows by their
+   precomputed fingerprint (no sibling parser needed) — a REAPER/Ableton/Logic
+   session enters the same retrieval corpus as Cubase. Remaining: agree the
+   fingerprint schema with the sibling repos; first prediction baselines
+   (state → coarse acoustic descriptors).
 
 ## Longer term / PhD trajectory
 
