@@ -39,12 +39,17 @@ graph, snapshot/diff, state→audio experiments, UI, and docs.
    `similarity` (cosine + Jaccard bags), `feature_deltas` (which axis explains a
    difference), and `retrieve_similar` (cross-DAW). Remaining: learned
    embeddings, temporal/automation-shape features.
-8. **Cross-DAW dataset** — **partly done:** `Observation.fingerprint` now rides
-   in `observations.jsonl` and `load_corpus` ingests foreign-DAW rows by their
-   precomputed fingerprint (no sibling parser needed) — a REAPER/Ableton/Logic
-   session enters the same retrieval corpus as Cubase. Remaining: agree the
-   fingerprint schema with the sibling repos; first prediction baselines
-   (state → coarse acoustic descriptors).
+8. **Cross-DAW dataset + prediction baselines** — **partly done:**
+   `Observation.fingerprint` rides in `observations.jsonl` and `load_corpus`
+   ingests foreign-DAW rows by their precomputed fingerprint (no sibling parser
+   needed). `prediction.py` + `state-audio-eval` add the first **state→acoustic
+   baselines**: a mean baseline and a nearest-fingerprint regressor, evaluated
+   leave-one-out with a skill-vs-mean metric, plus an intervention-effect view.
+   It is framed honestly as a *scaffold* on synthetic fixtures — and already
+   surfaces a real finding: a structural fingerprint is blind to within-A/B
+   plug-in-parameter changes, motivating parameter-level features. Remaining:
+   agree the fingerprint schema with the sibling repos; real state/audio corpus;
+   parameter-aware features; learned models.
 
 ## Longer term / PhD trajectory
 

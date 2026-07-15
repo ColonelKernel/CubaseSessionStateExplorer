@@ -29,6 +29,7 @@ cubase-explorer = "cubase_session_explorer.cli:main"
 cpr-lab = "cubase_session_explorer.extractors.cpr_lab:_cli"
 preset-lab = "cubase_session_explorer.extractors.vstpreset:_cli"
 session-fingerprint = "cubase_session_explorer.fingerprint:_cli"
+state-audio-eval = "cubase_session_explorer.prediction:_cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
