@@ -5,6 +5,10 @@ audio workstation state — interpretably, with honest provenance and uncertaint
 — and relating changes in that state to changes in the rendered acoustic
 outcome.**
 
+[![Live workbench](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://session-state-analyzer-n2lj2kmjjijdzta7oarpyt.streamlit.app/)
+
+**[Live demo](https://session-state-analyzer-n2lj2kmjjijdzta7oarpyt.streamlit.app/)** — this adapter's canonical bundles rendered in the Session State Analyzer workbench (no install).
+
 This is the fourth adapter in the family, joining prototypes for **REAPER**,
 **Ableton Live**, and **Logic Pro** (siblings on disk; audited in
 [`docs/PRIOR_PROTOTYPES_AUDIT.md`](docs/PRIOR_PROTOTYPES_AUDIT.md)). It is built
