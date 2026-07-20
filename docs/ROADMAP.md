@@ -32,10 +32,24 @@ graph, snapshot/diff, state→audio experiments, UI, and docs.
    enharmonic reinterpretations (e.g. MIDI 63 notated Eb4 vs default D#4) as
    acoustically-inert representational divergence. Remaining: Dorico
    interchange, timing-aligned matching, display-quantization comparison.
-7. **Structural fingerprint + similarity + retrieval**, reusing the REAPER/
-   Ableton approach on the Cubase graph.
-8. **Cross-DAW dataset** — unify `observations.jsonl` across REAPER/Ableton/
-   Logic/Cubase; first prediction baselines (state → coarse acoustic descriptors).
+7. ~~**Structural fingerprint + similarity + retrieval.**~~ **Done (v0):**
+   `fingerprint.py` + `session-fingerprint` CLI compute a scale-invariant,
+   interpretable fingerprint (track-type proportions, device/effect balance,
+   routing/send/automation density, observability) from canonical concepts only;
+   `similarity` (cosine + Jaccard bags), `feature_deltas` (which axis explains a
+   difference), and `retrieve_similar` (cross-DAW). Remaining: learned
+   embeddings, temporal/automation-shape features.
+8. **Cross-DAW dataset + prediction baselines** — **partly done:**
+   `Observation.fingerprint` rides in `observations.jsonl` and `load_corpus`
+   ingests foreign-DAW rows by their precomputed fingerprint (no sibling parser
+   needed). `prediction.py` + `state-audio-eval` add the first **state→acoustic
+   baselines**: a mean baseline and a nearest-fingerprint regressor, evaluated
+   leave-one-out with a skill-vs-mean metric, plus an intervention-effect view.
+   It is framed honestly as a *scaffold* on synthetic fixtures — and already
+   surfaces a real finding: a structural fingerprint is blind to within-A/B
+   plug-in-parameter changes, motivating parameter-level features. Remaining:
+   agree the fingerprint schema with the sibling repos; real state/audio corpus;
+   parameter-aware features; learned models.
 
 ## Longer term / PhD trajectory
 

@@ -39,9 +39,23 @@ change and a routing change), writing real `InterventionExperiment` records.
 ## Enabled research questions
 
 - **Prediction** — can broad acoustic characteristics be predicted from
-  structured state? (The graph + descriptor pairs are the training substrate.)
+  structured state? **Scaffold implemented (v0):** `prediction.py` +
+  `state-audio-eval` define the task, provide a mean baseline and a
+  nearest-fingerprint regressor, and evaluate leave-one-out with a skill-vs-mean
+  metric — framed honestly as a methodology scaffold on synthetic fixtures, not
+  a validated model. It already yields a genuine finding: structural fingerprints
+  predict coarse *between-session* character but are **blind to within-A/B
+  plug-in-parameter changes** (the fingerprint is identical across the pair), so
+  the paired intervention layer, not structure, carries that acoustic delta —
+  concrete evidence for why parameter-level state must enter the representation.
 - **Retrieval / similarity** — which sessions share a production strategy?
-  (Typed graph → structural fingerprints, as the REAPER/Ableton siblings do.)
+  **Implemented (v0):** `fingerprint.py` turns a session into a scale-invariant,
+  interpretable structural fingerprint built from canonical concepts only, with
+  cosine+Jaccard `similarity`, `feature_deltas` (which axis explains a
+  difference), and cross-DAW `retrieve_similar`. Because fingerprints ride in
+  `observations.jsonl`, a REAPER/Ableton/Logic session enters the same retrieval
+  corpus as Cubase without needing its parser — a concrete instance of the
+  shared representation the cross-DAW thesis argues for.
 - **Attribution** — which state change most explains an audio change?
   (Controlled `StateIntervention` pairs isolate a single cause.)
 - **Interpretable assistance** — can a model suggest a transformation while

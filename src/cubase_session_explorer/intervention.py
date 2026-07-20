@@ -48,6 +48,8 @@ class Observation(BaseModel):
     render: Optional[str] = None           # path to audio render
     descriptors: Optional[dict] = None     # AudioDescriptorSet dump
     intervention: Optional[str] = None     # intervention_id (or None for baseline)
+    fingerprint: Optional[dict] = None     # SessionFingerprint.to_dict() — enables
+                                           # cross-DAW retrieval straight from the corpus
 
 
 class InterventionExperiment(BaseModel):

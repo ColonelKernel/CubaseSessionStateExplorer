@@ -136,8 +136,11 @@ def cmd_experiment(args) -> int:
 
     result = diff_sessions(sa, sb)
 
-    obs_a = Observation(observation_id="obs-a", state_snapshot=snap_a, render=args.render_a)
-    obs_b = Observation(observation_id="obs-b", state_snapshot=snap_b, render=args.render_b)
+    from .fingerprint import fingerprint as make_fingerprint
+    obs_a = Observation(observation_id="obs-a", state_snapshot=snap_a, render=args.render_a,
+                        fingerprint=make_fingerprint(sa).to_dict())
+    obs_b = Observation(observation_id="obs-b", state_snapshot=snap_b, render=args.render_b,
+                        fingerprint=make_fingerprint(sb).to_dict())
 
     audio_delta = {}
     if args.render_a and args.render_b and os.path.exists(args.render_a) and os.path.exists(args.render_b):
